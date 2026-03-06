@@ -1,7 +1,6 @@
 import fitz          # PyMuPDF - fast full scan
 import pdfplumber    # accurate table extraction
 import re
-from pathlib import path
 
 class PageIndexParser:
     """
