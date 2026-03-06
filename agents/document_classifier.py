@@ -32,6 +32,11 @@ class DocumentClassifier:
             "credit rating", "CRISIL", "ICRA",
             "CARE", "rating assigned", "outlook"
         ],
+        "cibil_report": [
+        "CIBIL", "credit bureau", "credit score", 
+        "commercial report", "credit information",
+        "TransUnion", "Equifax", "CRIF"
+        ],
     }
     
     def classify(self, parser) -> str:
