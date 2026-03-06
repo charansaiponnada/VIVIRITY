@@ -41,7 +41,7 @@ class CAMGenerator:
         self.manual_notes = manual_notes
         self.loan_amount = loan_amount
         self.loan_purpose = loan_purpose
-        self.model = "gemini-2.0-flash"
+        self.model = "gemini-2.5-flash"
         self.doc = Document()
 
     def generate(self, output_path: str = None) -> str:

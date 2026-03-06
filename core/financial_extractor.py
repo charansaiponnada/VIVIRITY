@@ -1,8 +1,8 @@
 import re
 import os
+import time
 from google import genai
 from core.pdf_parser import PageIndexParser
-from utils.prompt_loader import PromptLoader
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,78 +12,91 @@ class FinancialExtractor:
     def __init__(self, parser: PageIndexParser):
         self.parser = parser
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = "gemini-2.0-flash"
+        self.model = "gemini-2.5-flash"
 
     def extract_all(self) -> dict:
-        return {
-            "basic_info": self.extract_basic_info(),
-            "financials": self.extract_financials(),
-            "debt_profile": self.extract_debt_profile(),
-            "gst_analysis": self.extract_gst_data(),
-            "red_flags": self.extract_red_flags(),
-        }
-
-    def extract_basic_info(self) -> dict:
-        pages = self.parser.query("company name directors promoter CIN")
-        if not pages:
-            return {}
-        text = "\n".join([p["text"] for p in pages[:2]])
-        prompt = PromptLoader.load("ingestor", "basic_info", {"text": text[:3000]})
-        response = self.client.models.generate_content(
-            model=self.model, contents=prompt
+        """Single Gemini call for everything - saves quota"""
+        pages = self.parser.query(
+            "revenue profit balance sheet GST directors debt litigation"
         )
-        return self._parse_json_response(response.text)
-
-    def extract_financials(self) -> dict:
-        pages = self.parser.query("revenue profit EBITDA balance sheet assets")
-        if not pages:
-            return {}
-        text = "\n".join([p["text"] for p in pages[:3]])
+        text = "\n".join([p["text"] for p in pages[:5]])
         tables = []
-        for p in pages[:3]:
+        for p in pages[:5]:
             tables.extend(p.get("tables", []))
         table_text = self._tables_to_text(tables)
-        prompt = PromptLoader.load("ingestor", "financials", {
-            "text": text[:2000],
-            "tables": table_text[:2000],
-        })
-        response = self.client.models.generate_content(
-            model=self.model, contents=prompt
-        )
-        return self._parse_json_response(response.text)
 
-    def extract_debt_profile(self) -> dict:
-        pages = self.parser.query("borrowings loans debt collateral security")
-        if not pages:
-            return {}
-        text = "\n".join([p["text"] for p in pages[:3]])
-        prompt = PromptLoader.load("ingestor", "debt_profile", {"text": text[:3000]})
-        response = self.client.models.generate_content(
-            model=self.model, contents=prompt
-        )
-        return self._parse_json_response(response.text)
+        prompt = f"""
+You are a senior credit analyst at an Indian NBFC.
+Analyze this company document and extract ALL of the following in one response.
 
-    def extract_gst_data(self) -> dict:
-        pages = self.parser.query("GST GSTR tax indirect")
-        if not pages:
-            return {"gst_found": False}
-        text = "\n".join([p["text"] for p in pages[:3]])
-        prompt = PromptLoader.load("ingestor", "gst_analysis", {"text": text[:3000]})
-        response = self.client.models.generate_content(
-            model=self.model, contents=prompt
-        )
-        return self._parse_json_response(response.text)
+Document text:
+{text[:4000]}
 
-    def extract_red_flags(self) -> dict:
-        pages = self.parser.query("litigation legal dispute penalty fraud audit")
-        if not pages:
-            return {"red_flags": []}
-        text = "\n".join([p["text"] for p in pages[:3]])
-        prompt = PromptLoader.load("ingestor", "red_flags", {"text": text[:3000]})
+Tables:
+{table_text[:1000]}
+
+Extract and return ONLY valid JSON with these exact keys:
+{{
+    "basic_info": {{
+        "company_name": null,
+        "cin": null,
+        "address": null,
+        "directors": [],
+        "business_nature": null,
+        "incorporation_year": null
+    }},
+    "financials": {{
+        "revenue_current": null,
+        "revenue_previous": null,
+        "ebitda": null,
+        "pat": null,
+        "total_assets": null,
+        "net_worth": null,
+        "total_debt": null,
+        "current_ratio": null,
+        "debt_to_equity": null
+    }},
+    "debt_profile": {{
+        "lenders": [],
+        "secured_loans": null,
+        "unsecured_loans": null,
+        "collateral": null,
+        "covenant_violations": null,
+        "npa_mention": false
+    }},
+    "gst_analysis": {{
+        "gst_numbers": [],
+        "total_gst_paid": null,
+        "gstr_mismatch_detected": false,
+        "mismatch_details": null,
+        "circular_trading_risk": false,
+        "gst_notices": []
+    }},
+    "red_flags": {{
+        "red_flags": [],
+        "litigation_count": 0,
+        "audit_qualified": false,
+        "going_concern_issue": false,
+        "severity": "low"
+    }}
+}}
+
+Use null for missing values. Return ONLY the JSON, no explanation.
+        """
+
+        time.sleep(4)
         response = self.client.models.generate_content(
-            model=self.model, contents=prompt
+            model=self.model,
+            contents=prompt
         )
-        return self._parse_json_response(response.text)
+        result = self._parse_json_response(response.text)
+
+        for key in ["basic_info", "financials", "debt_profile",
+                    "gst_analysis", "red_flags"]:
+            if key not in result:
+                result[key] = {}
+
+        return result
 
     def _tables_to_text(self, tables: list) -> str:
         result = []
