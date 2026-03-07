@@ -14,11 +14,11 @@ tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 def _gemini_with_retry(client, model: str, contents,
                         max_retries: int = 5,
-                        fallback: str = "gemini-2.0-flash-lite"):
+                        fallback: str = "gemini-2.5-flash"):
     """
     Retry Gemini calls on 503 (overloaded) and 429 (rate limit).
     Exponential backoff: 8s → 16s → 32s → 64s
-    Falls back to gemini-2.0-flash-lite on the last attempt.
+    Falls back to gemini-2.5-flash on the last attempt.
     """
     for attempt in range(max_retries):
         current_model = fallback if attempt == max_retries - 1 else model

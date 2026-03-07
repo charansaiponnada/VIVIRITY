@@ -12,7 +12,7 @@ load_dotenv()
 
 def _gemini_with_retry(client, model: str, contents,
                         max_retries: int = 5,
-                        fallback: str = "gemini-2.0-flash-lite"):
+                        fallback: str = "gemini-2.5-flash"):
     for attempt in range(max_retries):
         current_model = fallback if attempt == max_retries - 1 else model
         try:
