@@ -15,8 +15,8 @@ class PageIndexParser:
     """
 
     LARGE_PDF_THRESHOLD = 50   # pages above this trigger two-pass mode
-    PAGE_BUDGET         = 55   # max pages for deep pdfplumber extraction
-    PAGES_PER_SECTION   = 8    # max pages taken per priority section
+    PAGE_BUDGET       = 70   # change to 70
+    PAGES_PER_SECTION = 12    # change to 12
 
     def __init__(self, pdf_path: str):
         self.pdf_path        = pdf_path

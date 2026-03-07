@@ -1,7 +1,9 @@
 import re
 import os
+import json
 import time
 from google import genai
+from google.genai.errors import ServerError, ClientError
 from core.pdf_parser import PageIndexParser
 from dotenv import load_dotenv
 
@@ -40,6 +42,34 @@ JSON_SCHEMA = """{
 }"""
 
 
+def _gemini_with_retry(client, model: str, contents,
+                        max_retries: int = 5,
+                        fallback: str = "gemini-2.0-flash-lite"):
+    for attempt in range(max_retries):
+        current_model = fallback if attempt == max_retries - 1 else model
+        try:
+            return client.models.generate_content(
+                model=current_model,
+                contents=contents
+            )
+        except ServerError:
+            if attempt == max_retries - 1:
+                raise
+            wait = 8 * (2 ** attempt)
+            print(f"[Gemini] 503 — retrying in {wait}s "
+                  f"(attempt {attempt + 1}/{max_retries})")
+            time.sleep(wait)
+        except ClientError as e:
+            if "429" in str(e):
+                if attempt == max_retries - 1:
+                    raise
+                wait = 10 * (2 ** attempt)
+                print(f"[Gemini] 429 — retrying in {wait}s")
+                time.sleep(wait)
+            else:
+                raise
+
+
 class FinancialExtractor:
     def __init__(self, parser: PageIndexParser):
         self.parser = parser
@@ -47,27 +77,23 @@ class FinancialExtractor:
         self.model  = "gemini-2.5-flash"
 
     def extract_all(self) -> dict:
-        """
-        Routes to the right extraction strategy based on document size.
-        Large PDFs (>50 pages): two-pass targeted extraction
-        Small PDFs (<50 pages): standard text extraction
-        """
         if self.parser.is_large:
             return self._extract_large_pdf()
         return self._extract_small_pdf()
 
     def _extract_large_pdf(self) -> dict:
         """
-        For large PDFs (annual reports, 100-600 pages).
-        Uses two-pass PageIndex result — targeted pages already
-        extracted by parser. Section-aware, page-cited, fast.
+        Section-aware extraction for large PDFs (>50 pages).
+        Top 2 pages per section — targeted, fast, traceable.
         """
-        # section-aware query: 2 pages per key section
         section_queries = {
             "identity":   "company name CIN directors promoter incorporated",
-            "financials": "revenue profit EBITDA PAT turnover balance sheet",
-            "debt":       "borrowings loans debt collateral secured unsecured",
+            "financials": "revenue profit EBITDA PAT turnover balance sheet "
+                          "net worth total assets",
+            "debt":       "borrowings loans debt collateral secured unsecured "
+                          "term loan",
             "compliance": "GST litigation audit penalty going concern",
+            "net_worth":  "net worth equity shareholders funds reserves surplus",
         }
 
         seen_pages      = set()
@@ -89,45 +115,16 @@ class FinancialExtractor:
         text       = "\n\n".join(selected_text)
         table_text = self._tables_to_text(selected_tables)
 
-        prompt = f"""
-You are a senior credit analyst at an Indian NBFC.
-Each section is tagged with SOURCE page number for audit traceability.
-Extract financial data and record the page number where each key figure was found.
-
-Document text (with page citations):
-{text[:5000]}
-
-Tables:
-{table_text[:1500]}
-
-Indian context notes:
-- Figures are in INR Crores unless stated otherwise
-- PAT = Profit After Tax, EBITDA = Earnings Before Interest Tax Depreciation
-- Current Ratio = Current Assets / Current Liabilities (healthy if > 1.2)
-- Debt to Equity = Total Debt / Net Worth (conservative if < 1.0)
-- Look for GSTR-2A vs 3B mismatch as fake ITC signal
-- Look for audit qualifications, going concern notes, related party anomalies
-
-Return ONLY valid JSON matching this exact structure:
-{JSON_SCHEMA}
-
-Use null for missing values. Numbers only for financials (no units).
-source_page should be the page number where the data was found.
-Return ONLY the JSON. No explanation, no markdown.
-"""
+        prompt = self._build_prompt(text, table_text)
         time.sleep(3)
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt
-        )
+        response = _gemini_with_retry(self.client, self.model, prompt)
         return self._finalize(response.text)
 
     def _extract_small_pdf(self) -> dict:
-        """
-        For small PDFs (<50 pages) — query top relevant pages directly.
-        """
+        """For small PDFs — query top relevant pages directly."""
         pages = self.parser.query(
-            "revenue profit balance sheet GST directors debt litigation"
+            "revenue profit balance sheet GST directors debt "
+            "litigation net worth borrowings"
         )
         text = "\n\n".join([
             f"[SOURCE: Page {p.get('page_number', p['page'])} | "
@@ -139,39 +136,55 @@ Return ONLY the JSON. No explanation, no markdown.
             tables.extend(p.get("tables", []))
         table_text = self._tables_to_text(tables)
 
-        prompt = f"""
-You are a senior credit analyst at an Indian NBFC.
-Extract ALL financial data from this document.
-Each section is tagged with its SOURCE page number.
-
-Document text:
-{text[:4000]}
-
-Tables:
-{table_text[:1000]}
-
-Indian context:
-- Figures in INR Crores
-- GSTR-2A vs 3B mismatch = fake ITC signal
-- Circular trading = same party as buyer and seller
-- Going concern note = high risk flag
-
-Return ONLY valid JSON matching this exact structure:
-{JSON_SCHEMA}
-
-Use null for missing values. Numbers only for financials.
-source_page = page number where data was found.
-Return ONLY the JSON. No explanation.
-"""
+        prompt = self._build_prompt(text, table_text)
         time.sleep(3)
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt
-        )
+        response = _gemini_with_retry(self.client, self.model, prompt)
         return self._finalize(response.text)
 
+    def _build_prompt(self, text: str, table_text: str) -> str:
+        return f"""
+You are a senior credit analyst at an Indian NBFC.
+Each section is tagged with SOURCE page number for audit traceability.
+
+Document text:
+{text[:5000]}
+
+Tables:
+{table_text[:1500]}
+
+Indian financial context:
+- All figures in INR Crores unless stated otherwise
+- Net Worth = Equity Share Capital + Reserves & Surplus
+- Total Debt = Long-term Borrowings + Short-term Borrowings + Current maturities
+- EBITDA = PAT + Tax + Depreciation + Interest/Finance costs
+- Debt to Equity = Total Debt / Net Worth
+- Current Ratio = Current Assets / Current Liabilities
+
+CRITICAL — What counts as a RED FLAG (only these):
+- Audit qualification by statutory auditor
+- Going concern doubt expressed by auditor
+- NPA (Non-Performing Asset) classification
+- Wilful defaulter tag
+- Adverse NCLT/insolvency order against the company
+- Active CBI/ED/fraud investigation
+- DRT (Debt Recovery Tribunal) case filed against company
+
+DO NOT flag these as red flags (they are normal disclosures):
+- Related Party Transactions (mandatory under Companies Act 2013 / Ind AS 24)
+- Contingent liabilities (standard disclosure)
+- Pending tax disputes (routine)
+- NCLT approval for restructuring/demerger (positive event)
+- SEBI settlement by subsidiary for minor amounts (not direct company issue)
+
+Return ONLY valid JSON:
+{JSON_SCHEMA}
+
+Use null for missing values. Numbers only for financials (no units, no commas).
+source_page = page number where the data was found.
+Return ONLY the JSON. No explanation, no markdown.
+"""
+
     def _finalize(self, response_text: str) -> dict:
-        """Parse response and ensure all keys exist"""
         result = self._parse_json_response(response_text)
         for key in ["basic_info", "financials", "debt_profile",
                     "gst_analysis", "red_flags"]:
@@ -180,17 +193,16 @@ Return ONLY the JSON. No explanation.
         return result
 
     def _tables_to_text(self, tables: list) -> str:
-        result = []
+        rows = []
         for table in tables:
             if table:
                 for row in table:
                     if row:
-                        cleaned = [str(cell) if cell else "" for cell in row]
-                        result.append(" | ".join(cleaned))
-        return "\n".join(result)
+                        cleaned = [str(c) if c else "" for c in row]
+                        rows.append(" | ".join(cleaned))
+        return "\n".join(rows)
 
     def _parse_json_response(self, text: str) -> dict:
-        import json
         try:
             text = re.sub(r'```json\s*', '', text)
             text = re.sub(r'```\s*', '', text)
