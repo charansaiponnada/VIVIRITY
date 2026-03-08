@@ -1,0 +1,60 @@
+{
+  "record_id": "174ab9e29083",
+  "company_name": "Tata Motors Limited",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-08T12:41:59.872502",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 1.0,
+  "cin": null,
+  "directors": [
+    {
+      "name": "N Chandrasekaran",
+      "role": "Chairman and Non-Executive Director"
+    },
+    "Girish Wagh"
+  ],
+  "promoters": [],
+  "fiscal_year": "FY25",
+  "revenue_crores": 439695,
+  "revenue_growth_percent": 1.3,
+  "profit_after_tax_crores": 28149,
+  "profit_before_tax_crores": 34330,
+  "ebitda_crores": 57649,
+  "ebitda_margin_percent": 13.11,
+  "depreciation_crores": 33972,
+  "finance_cost_crores": 4999,
+  "operating_cash_flow_crores": null,
+  "capex_crores": null,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": false,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [
+    5,
+    10
+  ],
+  "extraction_notes": "The full list of directors, depreciation, and finance costs could not be extracted as the relevant sections (e.g., 'Board of Directors' mentioned on page 14, and detailed financial statements) were beyond the provided text extract (which ends at page 11). All extracted financial figures are consolidated for FY25.",
+  "net_worth_crores": 116144.0,
+  "debt_equity_ratio": 0.6,
+  "return_on_equity_percent": 28.0,
+  "return_on_capital_employed_percent": 17.6,
+  "total_borrowings_crores": 223357,
+  "long_term_borrowings_crores": 186591,
+  "short_term_borrowings_crores": 36766,
+  "total_assets_crores": 378642,
+  "current_assets_crores": 122754,
+  "current_liabilities_crores": 122754,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "current_ratio": 1.0,
+  "interest_coverage_ratio": 11.53,
+  "return_on_assets_percent": 7.43,
+  "ratios_computed": [
+    "CR=1.00x",
+    "ICR=11.53x"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "record_id": "22fe97a801c4",
+  "company_name": "Tata Motors Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T13:01:37.484745",
+  "ml_probability_of_lending": 0.911,
+  "ml_score": 91.1,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "interest_coverage_ratio",
+      "contribution": 0.28,
+      "interpretation": "Strong interest coverage \u2192 high debt service capacity"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    },
+    {
+      "feature": "debt_equity_ratio",
+      "contribution": -0.054,
+      "interpretation": "High leverage \u2192 elevated financial risk"
+    }
+  ],
+  "five_cs_weighted_score": 89.25,
+  "five_cs_final_score": 89.25,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0.0,
+  "final_decision": "APPROVE",
+  "final_rating": "AAA",
+  "interest_rate_percent": 11.0,
+  "recommended_amount_crores": 2000,
+  "tenure_months": 36,
+  "decision_rationale": "Tata Motors Limited demonstrates exceptional creditworthiness, meriting an 'APPROVE' decision. This is underpinned by excellent Character (90) due to strong Tata Group governance and no red flags, and outstanding Capacity (95) with an Interest Coverage Ratio of 85.74x and robust profitability. Strong Capital (90) is evidenced by a low Debt-to-Equity of 0.6x and a net cash positive position, further complemented by substantial Collateral (85) from a large asset base. The overall Blended Risk Score of 90.08/100, combined with a Research Rating of 'A', supports the recommended loan amount and interest rate."
+}

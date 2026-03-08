@@ -88,12 +88,13 @@ class FinancialExtractor:
         """
         section_queries = {
             "identity":   "company name CIN directors promoter incorporated",
-            "financials": "revenue profit EBITDA PAT turnover balance sheet "
-                          "net worth total assets",
-            "debt":       "borrowings loans debt collateral secured unsecured "
-                          "term loan",
-            "compliance": "GST litigation audit penalty going concern",
-            "net_worth":  "net worth equity shareholders funds reserves surplus",
+            "revenue":    "revenue turnover income from operations total income",
+            "profit":     "profit after tax PAT profit before tax net profit",
+            "ebitda":     "depreciation amortization finance cost interest EBITDA operating profit",
+            "balance":    "total assets total liabilities current assets current liabilities",
+            "net_worth":  "net worth equity share capital reserves surplus shareholders funds",
+            "debt":       "borrowings long term short term secured unsecured term loan",
+            "compliance": "GST audit going concern litigation penalty qualification",
         }
 
         seen_pages      = set()

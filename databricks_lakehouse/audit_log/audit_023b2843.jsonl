@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-07T15:21:23.070555", "session_id": "023b2843", "operation": "WRITE_BRONZE", "doc_type": "annual_report", "record_id": "db6be8de8ea2", "company": "Tata Motors Limited", "notes": ""}
+{"timestamp": "2026-03-07T15:21:23.077555", "session_id": "023b2843", "operation": "WRITE_GOLD", "doc_type": "ml_scoring", "record_id": "af3ecc0764fe", "company": "Tata Motors Limited", "notes": ""}

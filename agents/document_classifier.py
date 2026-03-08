@@ -1,94 +1,123 @@
 import re
 
+DOCUMENT_TYPES = {
+    "annual_report": [
+        "annual report", "integrated annual report",
+        "management discussion and analysis", "corporate governance report",
+        "standalone financial statements", "consolidated financial statements",
+        "notes to financial statements", "board of directors report",
+        "directors report", "auditors report", "balance sheet",
+        "profit and loss", "statement of profit",
+    ],
+    "gst_filing": [
+        "gstr", "gst return", "goods and services tax return",
+        "gstr-1", "gstr-3b", "gstr-2a", "gstr-9",
+        "outward supplies", "inward supplies",
+    ],
+    "bank_statement": [
+        "account statement", "bank statement", "current account",
+        "savings account", "transaction history", "opening balance",
+        "closing balance", "debit", "credit", "ifsc",
+    ],
+    "legal_notice": [
+        "legal notice", "demand notice", "notice under section",
+        "writ petition", "arbitration notice", "cease and desist",
+        "show cause notice", "default notice",
+    ],
+    "sanction_letter": [
+        "sanction letter", "loan sanction", "term loan sanction",
+        "credit facility", "working capital limit", "sanctioned amount",
+        "repayment schedule", "moratorium period",
+    ],
+    "cibil_report": [
+        "cibil", "credit information report", "credit score",
+        "credit bureau", "transunion", "equifax",
+        "credit history", "repayment history",
+    ],
+    "rating_report": [
+        "credit rating assigned", "crisil rated", "icra rated",
+        "care ratings assigned", "rating action communique",
+        "rating reaffirmed", "rating upgraded", "rating downgraded",
+        "brickwork ratings", "acuite ratings",
+    ],
+}
+
+# Priority order — first match wins for ambiguous docs
+PRIORITY = [
+    "annual_report",
+    "gst_filing",
+    "bank_statement",
+    "legal_notice",
+    "sanction_letter",
+    "cibil_report",
+    "rating_report",
+]
+
 
 class DocumentClassifier:
+    def __init__(self, parser):
+        self.parser = parser
 
-    DOCUMENT_TYPES = {
-        "annual_report": [
-            "annual report", "directors report", "board report",
-            "balance sheet", "profit and loss", "statement of profit",
-            "auditor", "annual general meeting",
-            "integrated annual report",
-            "management discussion and analysis",
-            "corporate governance report",
-            "standalone financial",
-            "consolidated financial",
-            "notes to financial statements",
-        ],
-        "gst_filing": [
-            "gstr", "outward supply", "inward supply",
-            "input tax credit", "gstin", "gst return",
-        ],
-        "bank_statement": [
-            "account statement", "opening balance", "closing balance",
-            "transaction date", "neft", "rtgs", "imps",
-            "debit", "credit", "bank statement",
-        ],
-        "legal_notice": [
-            "legal notice", "court", "plaintiff",
-            "defendant", "summons", "decree", "writ petition",
-        ],
-        "sanction_letter": [
-            "sanction", "sanctioned limit", "facility letter",
-            "terms and conditions", "repayment schedule",
-        ],
-        "cibil_report": [
-            "cibil", "credit bureau", "credit score",
-            "commercial report", "transunion", "equifax", "crif",
-        ],
-        "rating_report": [
-            "credit rating", "crisil", "icra", "care ratings",
-            "rating assigned", "rating action", "rating outlook",
-        ],
-    }
+    def classify(self) -> str:
+        """Classify a parsed PDF by scanning its text content."""
+        text = self._get_text()
+        text_lower = text.lower()
 
-    # priority order — first match wins
-    PRIORITY = [
-        "annual_report",
-        "gst_filing",
-        "bank_statement",
-        "legal_notice",
-        "sanction_letter",
-        "cibil_report",
-        "rating_report",
-    ]
+        scores: dict[str, int] = {doc_type: 0 for doc_type in DOCUMENT_TYPES}
 
-    def classify(self, parser) -> str:
-        """
-        Classify document by scanning first 8 pages only.
-        Uses priority ordering so annual_report beats rating_report.
-        """
-        # ── get page count from parser, not classifier ──────
-        page_count = parser.page_count  # parser has this attribute
+        for doc_type, keywords in DOCUMENT_TYPES.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    scores[doc_type] += 1
 
-        sample_text = ""
-        for page_num in range(1, min(9, page_count + 1)):
-            page_data = parser.pages.get(page_num, {})
-            sample_text += page_data.get("text", "")
+        # Pick highest score, respecting priority for ties
+        best_type  = "annual_report"
+        best_score = 0
 
-        # fallback: if pages not yet populated (parse() not called),
-        # use PyMuPDF directly for a quick text grab
-        if not sample_text.strip():
-            try:
-                import fitz
-                doc = fitz.open(parser.pdf_path)
-                for i in range(min(8, len(doc))):
-                    sample_text += doc[i].get_text("text") or ""
-                doc.close()
-            except Exception:
-                pass
+        for doc_type in PRIORITY:
+            if scores[doc_type] > best_score:
+                best_score = scores[doc_type]
+                best_type  = doc_type
 
-        sample_lower = sample_text.lower()
+        # Fallback: large PDF almost certainly an annual report
+        try:
+            page_count = self.parser.page_count
+        except AttributeError:
+            page_count = len(getattr(self.parser, "pages", [])) or 0
 
-        scores = {}
-        for doc_type, keywords in self.DOCUMENT_TYPES.items():
-            scores[doc_type] = sum(
-                1 for kw in keywords if kw in sample_lower
-            )
+        if best_score == 0 and page_count > 50:
+            best_type = "annual_report"
 
-        # priority order — first type with score > 0 wins
-        for doc_type in self.PRIORITY:
-            if scores.get(doc_type, 0) > 0:
-                return doc_type
+        return best_type
 
-        return "annual_report"  # default fallback for unknown large PDFs
+    def _get_text(self) -> str:
+        """Extract text sample from the parsed PDF for classification."""
+        try:
+            # Try pages attribute (pdfplumber)
+            pages = getattr(self.parser, "pages", None)
+            if pages:
+                sample_pages = list(pages)[:10]
+                texts = []
+                for p in sample_pages:
+                    try:
+                        t = p.extract_text() or ""
+                        texts.append(t)
+                    except Exception:
+                        pass
+                return " ".join(texts)
+        except Exception:
+            pass
+
+        # Fallback: PyMuPDF
+        try:
+            import fitz
+            doc   = fitz.open(self.parser.path) if hasattr(self.parser, "path") else None
+            if doc:
+                text = ""
+                for i in range(min(10, len(doc))):
+                    text += doc[i].get_text()
+                return text
+        except Exception:
+            pass
+
+        return ""

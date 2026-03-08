@@ -1,0 +1,65 @@
+{
+  "record_id": "d71dab23e210",
+  "company_name": "Tata Motors Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T13:15:11.069525",
+  "ml_probability_of_lending": 0.9031,
+  "ml_score": 90.3,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "interest_coverage_ratio",
+      "contribution": 0.2152,
+      "interpretation": "Strong interest coverage \u2192 high debt service capacity"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    },
+    {
+      "feature": "debt_equity_ratio",
+      "contribution": -0.054,
+      "interpretation": "High leverage \u2192 elevated financial risk"
+    },
+    {
+      "feature": "net_debt_equity_ratio",
+      "contribution": -0.0207,
+      "interpretation": "High net leverage relative to equity"
+    }
+  ],
+  "five_cs_weighted_score": 0,
+  "five_cs_final_score": 0,
+  "five_cs_rating": "UNRATED",
+  "penalty_applied": 0,
+  "final_decision": "CANNOT_ASSESS",
+  "final_rating": "UNRATED",
+  "interest_rate_percent": null,
+  "recommended_amount_crores": null,
+  "tenure_months": null,
+  "decision_rationale": "AI scoring failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash-lite\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite\\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite\\nPlease retry in 49.819847479s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', 'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.0-flash-lite'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaDimensions': {'model': 'gemini-2.0-flash-lite', 'location': 'global'}}, {'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.0-flash-lite'}}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '49s'}]}}. Manual review required."
+}

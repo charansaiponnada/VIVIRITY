@@ -1,0 +1,60 @@
+{
+  "record_id": "509088f14fa3",
+  "company_name": "Tata motors limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T13:24:11.441353",
+  "ml_probability_of_lending": 0.903,
+  "ml_score": 90.3,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "interest_coverage_ratio",
+      "contribution": 0.2152,
+      "interpretation": "Strong interest coverage \u2192 high debt service capacity"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    },
+    {
+      "feature": "debt_equity_ratio",
+      "contribution": -0.054,
+      "interpretation": "High leverage \u2192 elevated financial risk"
+    }
+  ],
+  "five_cs_weighted_score": 89.65,
+  "five_cs_final_score": 89.65,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0.0,
+  "final_decision": "APPROVE",
+  "final_rating": "AA",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 2000,
+  "tenure_months": 36,
+  "decision_rationale": "Tata Motors Limited presents an exceptionally strong credit profile, reflected in outstanding scores across Character (90), Capacity (92), and Capital (95). The company boasts an excellent Interest Coverage Ratio of 11.53x and a negative Net Debt position (-1018.0 Cr), signifying robust liquidity and minimal leverage with a Net Debt-Equity Ratio of -0.01x. While the Conditions score is moderate at 78 due to competitive pressures, the overall financial strength, significant asset base, and strong promoter background mitigate these risks. Given the 'AA' rating and a Blended Risk Score of 89.94, this proposal aligns well with Vivriti Capital's lending criteria."
+}

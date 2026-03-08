@@ -1,0 +1,60 @@
+{
+  "record_id": "974bbb6e8e14",
+  "company_name": "Tata Motors Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-07T15:44:37.641126",
+  "ml_probability_of_lending": 0.8971,
+  "ml_score": 89.7,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "sector_strong",
+      "contribution": 0.3,
+      "interpretation": "Favourable sector conditions"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    },
+    {
+      "feature": "debt_equity_ratio",
+      "contribution": -0.054,
+      "interpretation": "High leverage \u2192 elevated financial risk"
+    }
+  ],
+  "five_cs_weighted_score": 87.25,
+  "five_cs_final_score": 87.25,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0.0,
+  "final_decision": "APPROVE",
+  "final_rating": "AA",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 2000,
+  "tenure_months": 36,
+  "decision_rationale": "Tata Motors Limited demonstrates exceptional creditworthiness, primarily driven by stellar Character (95) and Capital (95) scores, supported by a strong net worth of \u20b9116,144 crores and a conservative Debt/Equity of 0.6x. The company's robust Capacity (85) is evidenced by substantial revenues of \u20b9439,695 crores and a healthy 13.11% EBITDA margin, indicating strong operational performance and repayment capability. While market Conditions (70) present a mixed outlook, Tata Motors' strategic agility, including price increases and strong Q2 FY26 PV segment income, mitigates concerns. Overall, the blended risk score of 87.25/100 and AA rating affirm a low-risk profile, warranting approval."
+}

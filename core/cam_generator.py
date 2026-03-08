@@ -2,631 +2,527 @@ import os
 import json
 from datetime import datetime
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from google import genai
-from utils.prompt_loader import PromptLoader
-from dotenv import load_dotenv
-import re
 
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+def _set_cell_bg(cell, hex_color: str):
+    """Set table cell background colour."""
+    tc   = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    shd  = OxmlElement("w:shd")
+    shd.set(qn("w:val"),   "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"),  hex_color)
+    tcPr.append(shd)
+
+
+def _bold_cell(cell, text: str, font_size: int = 10, color: str = None):
+    cell.text = ""
+    run = cell.paragraphs[0].add_run(text)
+    run.bold = True
+    run.font.size = Pt(font_size)
+    if color:
+        run.font.color.rgb = RGBColor.from_string(color)
 
 
 class CAMGenerator:
-    """
-    Generates a professional Credit Appraisal Memo (CAM)
-    in Word format - exactly like a real Indian bank/NBFC memo.
-    """
+    VIVRITI_BLUE  = "1B3A6B"
+    VIVRITI_GOLD  = "C9A84C"
+    LIGHT_BLUE    = "E8F0FA"
+    LIGHT_GREY    = "F5F5F5"
+    RED_ALERT     = "C0392B"
+    GREEN_OK      = "1E8449"
+    ORANGE_WARN   = "D68910"
 
-    def __init__(
+    def __init__(self, output_dir: str = "outputs"):
+        os.makedirs(output_dir, exist_ok=True)
+        self.output_dir = output_dir
+
+    # ================================================================== #
+    def generate(
         self,
-        company_name: str,
-        financials: dict,
-        research: dict,
-        five_cs: dict,
-        recommendation: dict,
-        manual_notes: str = "",
-        loan_amount: str = "Not specified",
-        loan_purpose: str = "Working Capital / Term Loan",
-    ):
-        self.company_name = company_name
-        self.financials = financials
-        self.research = research
-        self.five_cs = five_cs
-        self.recommendation = recommendation
-        self.manual_notes = manual_notes
-        self.loan_amount = loan_amount
-        self.loan_purpose = loan_purpose
-        self.model = "gemini-2.5-flash"
-        self.doc = Document()
+        company_name:   str,
+        financials:     dict,
+        research:       dict,
+        scoring:        dict,
+        cross_ref:      dict,
+        manual_notes:   str  = "",
+        loan_amount:    str  = "",
+        loan_purpose:   str  = "",
+    ) -> str:
+        print(f"[CAMGenerator] Generating Credit Appraisal Memo for {company_name}...")
 
-    def generate(self, output_path: str = None) -> str:
-        """Generate the full CAM document and save to file"""
-        print(f"[CAMGenerator] Generating CAM for {self.company_name}...")
+        doc = Document()
+        self._set_page_margins(doc)
+        self._set_default_font(doc)
 
-        # get AI-written content
-        cam_content = self._generate_cam_content()
+        self._add_header(doc, company_name, scoring)
+        self._add_executive_summary(doc, company_name, scoring, financials, loan_amount, loan_purpose)
+        self._add_company_background(doc, financials, company_name)
+        self._add_financial_analysis(doc, financials)
+        self._add_five_cs(doc, scoring)
+        self._add_research_intelligence(doc, research, scoring)
+        self._add_cross_reference(doc, cross_ref)
+        if manual_notes:
+            self._add_field_notes(doc, manual_notes)
+        self._add_recommendation(doc, scoring)
+        self._add_footer(doc)
 
-        # build the Word document
-        self._setup_document_styles()
-        self._add_header()
-        self._add_executive_summary(cam_content)
-        self._add_company_background(cam_content)
-        self._add_financial_analysis()
-        self._add_five_cs_table()
-        self._add_risk_assessment(cam_content)
-        self._add_early_warning_signals()
-        self._add_recommendation_section()
-        self._add_footer()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = "".join(c for c in company_name if c.isalnum() or c in " _-")[:40]
+        filename  = f"CAM_{safe_name}_{timestamp}.docx"
+        filepath  = os.path.join(self.output_dir, filename)
+        doc.save(filepath)
+        print(f"[CAMGenerator] CAM generated: {filepath}")
+        return filepath
 
-        # save
-        if not output_path:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_name = re.sub(r'[^\w\s-]', '', self.company_name).strip()
-            output_path = f"outputs/CAM_{safe_name}_{timestamp}.docx"
+    # ================================================================== #
+    def _set_page_margins(self, doc):
+        from docx.oxml import OxmlElement
+        for section in doc.sections:
+            section.top_margin    = Cm(1.8)
+            section.bottom_margin = Cm(1.8)
+            section.left_margin   = Cm(2.0)
+            section.right_margin  = Cm(2.0)
 
-        os.makedirs("outputs", exist_ok=True)
-        self.doc.save(output_path)
-        print(f"[CAMGenerator] CAM saved to: {output_path}")
-        return output_path
+    def _set_default_font(self, doc):
+        doc.styles["Normal"].font.name = "Calibri"
+        doc.styles["Normal"].font.size = Pt(10)
 
-    def _generate_cam_content(self) -> dict:
-        """Use Gemini to generate professional CAM text content"""
-        prompt = PromptLoader.load("cam", "cam_template", {
-            "company_name": self.company_name,
-            "date": datetime.now().strftime("%d %B %Y"),
-            "loan_amount": self.loan_amount,
-            "loan_purpose": self.loan_purpose,
-            "financials": json.dumps(self.financials, indent=2)[:1500],
-            "research": json.dumps(self.research, indent=2)[:1500],
-            "five_cs": json.dumps(self.five_cs, indent=2)[:1500],
-            "manual_notes": self.manual_notes or "No manual notes provided.",
-        })
+    # ================================================================== #
+    def _add_header(self, doc, company_name: str, scoring: dict):
+        rec    = scoring.get("recommendation", {})
+        rating = rec.get("rating", scoring.get("risk_score", {}).get("rating", "N/A"))
+        decision = rec.get("decision", "N/A")
 
-        # instruct Gemini to return JSON sections
-        prompt += """
+        # Header table: logo area + title + decision badge
+        table = doc.add_table(rows=1, cols=3)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.columns[0].width = Inches(1.5)
+        table.columns[1].width = Inches(3.5)
+        table.columns[2].width = Inches(2.0)
 
-Return ONLY valid JSON with these keys:
-executive_summary (string),
-company_background (string),
-financial_analysis (string),
-risk_assessment (string),
-early_warning_signals (list of strings),
-recommendation_narrative (string).
-"""
-        response = client.models.generate_content(
-            model=self.model,
-            contents=prompt
-        )
-        return self._parse_json(response.text)
+        left_cell   = table.cell(0, 0)
+        mid_cell    = table.cell(0, 1)
+        right_cell  = table.cell(0, 2)
 
-    def _setup_document_styles(self):
-        """Set up document margins and default styles"""
-        from docx.shared import Cm
-        section = self.doc.sections[0]
-        section.top_margin = Cm(2)
-        section.bottom_margin = Cm(2)
-        section.left_margin = Cm(2.5)
-        section.right_margin = Cm(2.5)
+        _set_cell_bg(left_cell,  self.VIVRITI_BLUE)
+        _set_cell_bg(mid_cell,   self.VIVRITI_BLUE)
+        _set_cell_bg(right_cell, self.VIVRITI_BLUE)
 
-    def _add_header(self):
-        """Add professional bank header"""
-        # company header bar
-        header_para = self.doc.add_paragraph()
-        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = header_para.add_run("VIVRITI CAPITAL LIMITED")
-        run.bold = True
-        run.font.size = Pt(16)
-        run.font.color.rgb = RGBColor(0x00, 0x52, 0x8C)
+        # Left: Company
+        lp = left_cell.paragraphs[0]
+        lp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r = lp.add_run("VIVRITI CAPITAL")
+        r.bold = True; r.font.size = Pt(9); r.font.color.rgb = RGBColor.from_string(self.VIVRITI_GOLD)
 
-        sub_header = self.doc.add_paragraph()
-        sub_header.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run2 = sub_header.add_run("Credit Appraisal Memorandum (CAM)")
-        run2.bold = True
-        run2.font.size = Pt(13)
+        # Mid: Title
+        mp = mid_cell.paragraphs[0]
+        mp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = mp.add_run("CREDIT APPRAISAL MEMORANDUM\n")
+        r1.bold = True; r1.font.size = Pt(14); r1.font.color.rgb = RGBColor(255,255,255)
+        r2 = mp.add_run(company_name)
+        r2.bold = True; r2.font.size = Pt(11); r2.font.color.rgb = RGBColor.from_string(self.VIVRITI_GOLD)
 
-        # divider line
-        self._add_horizontal_line()
+        # Right: Decision badge
+        decision_color = self.GREEN_OK if decision == "APPROVE" else \
+                         self.ORANGE_WARN if decision == "CONDITIONAL_APPROVE" else self.RED_ALERT
+        rp = right_cell.paragraphs[0]
+        rp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r3 = rp.add_run(f"{decision}\n")
+        r3.bold = True; r3.font.size = Pt(13); r3.font.color.rgb = RGBColor.from_string(decision_color)
+        r4 = rp.add_run(f"Rating: {rating}")
+        r4.bold = True; r4.font.size = Pt(11); r4.font.color.rgb = RGBColor(255,255,255)
 
-        # CAM details table
-        table = self.doc.add_table(rows=2, cols=4)
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_executive_summary(self, doc, company_name, scoring, financials, loan_amount, loan_purpose):
+        self._section_heading(doc, "EXECUTIVE SUMMARY")
+
+        rec         = scoring.get("recommendation", {})
+        risk_score  = scoring.get("risk_score",     {})
+        # Use blended score from recommendation (post-ML-blend), fall back to risk_score
+        final_score = rec.get("final_score", risk_score.get("final_score", 0))
+        rating      = rec.get("rating",  risk_score.get("rating",   "N/A"))
+        decision    = rec.get("decision", "N/A")
+        amount      = rec.get("recommended_amount_crores", loan_amount or "N/A")
+        rate        = rec.get("interest_rate_percent", "N/A")
+        tenure      = rec.get("tenure_months", "N/A")
+
+        # Score card table
+        table = doc.add_table(rows=2, cols=5)
         table.style = "Table Grid"
-
-        details = [
-            ["Company Name", self.company_name,
-             "Date", datetime.now().strftime("%d-%b-%Y")],
-            ["Loan Amount", self.loan_amount,
-             "Purpose", self.loan_purpose],
+        headers = ["Credit Score", "Rating", "Decision", "Recommended Amount", "Interest Rate"]
+        values  = [
+            f"{final_score}/100",
+            str(rating),
+            str(decision),
+            f"₹{amount} Cr" if amount not in ["N/A", None, ""] else "N/A",
+            f"{rate}%" if rate not in ["N/A", None, ""] else "N/A",
         ]
 
-        for i, row_data in enumerate(details):
-            row = table.rows[i]
-            for j, cell_text in enumerate(row_data):
-                cell = row.cells[j]
-                cell.text = cell_text
-                if j % 2 == 0:  # label cells
-                    cell.paragraphs[0].runs[0].bold = True
-                    self._shade_cell(cell, "E8F0FE")
+        for i, (h, v) in enumerate(zip(headers, values)):
+            hc = table.cell(0, i); vc = table.cell(1, i)
+            _set_cell_bg(hc, self.VIVRITI_BLUE)
+            _bold_cell(hc, h, font_size=9, color="FFFFFF")
+            hc.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            vc.text = v
+            vc.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            vc.paragraphs[0].runs[0].bold = True
+            _set_cell_bg(vc, self.LIGHT_BLUE)
 
-        self.doc.add_paragraph()
+        doc.add_paragraph()
 
-    def _add_executive_summary(self, cam_content: dict):
-        """Add executive summary section"""
-        self._add_section_heading("1. EXECUTIVE SUMMARY")
+        # Decision rationale
+        rationale = rec.get("decision_rationale") or rec.get("rejection_reason") or "See Five Cs analysis below."
+        p = doc.add_paragraph()
+        p.add_run("Decision Rationale: ").bold = True
+        p.add_run(str(rationale))
 
-        summary = cam_content.get(
-            "executive_summary",
-            "Executive summary not available."
-        )
-        self.doc.add_paragraph(summary)
-
-        # recommendation badge
-        decision = self.recommendation.get("decision", "PENDING")
-        color_map = {
-            "APPROVE": "00B050",
-            "CONDITIONAL_APPROVE": "FF8C00",
-            "REJECT": "FF0000",
-        }
-        color = color_map.get(decision, "808080")
-
-        rec_para = self.doc.add_paragraph()
-        rec_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = rec_para.add_run(f"  RECOMMENDATION: {decision}  ")
-        run.bold = True
-        run.font.size = Pt(12)
-        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        self._shade_paragraph_background(rec_para, color)
-
-        self.doc.add_paragraph()
-
-    def _add_company_background(self, cam_content: dict):
-        """Add company background section"""
-        self._add_section_heading("2. COMPANY BACKGROUND")
-
-        background = cam_content.get(
-            "company_background",
-            "Company background not available."
-        )
-        self.doc.add_paragraph(background)
-
-        # basic info table if available
-        basic = self.financials.get("basic_info", {})
-        if basic and not basic.get("parse_error"):
-            self.doc.add_paragraph()
-            table = self.doc.add_table(rows=1, cols=2)
-            table.style = "Table Grid"
-
-            # header
-            header_row = table.rows[0]
-            header_row.cells[0].text = "Parameter"
-            header_row.cells[1].text = "Details"
-            for cell in header_row.cells:
-                cell.paragraphs[0].runs[0].bold = True
-                self._shade_cell(cell, "1F3864")
-                cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(
-                    0xFF, 0xFF, 0xFF
-                )
-
-            fields = [
-                ("Company Name", basic.get("company_name", "N/A")),
-                ("CIN", basic.get("cin", "N/A")),
-                ("Registered Address", basic.get("address", "N/A")),
-                ("Nature of Business", basic.get("business_nature", "N/A")),
-                ("Year of Incorporation", str(basic.get("incorporation_year", "N/A"))),
-                ("Directors/Promoters", ", ".join(basic.get("directors", []) or [])),
-            ]
-
-            for label, value in fields:
-                row = table.add_row()
-                row.cells[0].text = label
-                row.cells[0].paragraphs[0].runs[0].bold = True
-                self._shade_cell(row.cells[0], "E8F0FE")
-                row.cells[1].text = str(value) if value else "N/A"
-
-        self.doc.add_paragraph()
-
-    def _add_financial_analysis(self):
-        """Add financial analysis with key ratios table"""
-        self._add_section_heading("3. FINANCIAL ANALYSIS")
-
-        fin = self.financials.get("financials", {})
-
-        if fin and not fin.get("parse_error"):
-            # key financials table
-            table = self.doc.add_table(rows=1, cols=3)
-            table.style = "Table Grid"
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-            # header row
-            headers = ["Financial Metric", "Current Year (₹ Cr)", "Assessment"]
-            header_row = table.rows[0]
-            for i, h in enumerate(headers):
-                header_row.cells[i].text = h
-                header_row.cells[i].paragraphs[0].runs[0].bold = True
-                self._shade_cell(header_row.cells[i], "1F3864")
-                header_row.cells[i].paragraphs[0].runs[0].font.color.rgb = (
-                    RGBColor(0xFF, 0xFF, 0xFF)
-                )
-
-            # financial rows
-            metrics = [
-                ("Total Revenue/Turnover",
-                 fin.get("revenue_current"),
-                 self._assess_metric("revenue", fin.get("revenue_current"))),
-                ("EBITDA",
-                 fin.get("ebitda"),
-                 self._assess_metric("ebitda", fin.get("ebitda"))),
-                ("PAT (Profit After Tax)",
-                 fin.get("pat"),
-                 self._assess_metric("pat", fin.get("pat"))),
-                ("Total Assets",
-                 fin.get("total_assets"),
-                 "—"),
-                ("Net Worth / Equity",
-                 fin.get("net_worth"),
-                 self._assess_metric("net_worth", fin.get("net_worth"))),
-                ("Total Debt / Borrowings",
-                 fin.get("total_debt"),
-                 "—"),
-                ("Current Ratio",
-                 fin.get("current_ratio"),
-                 self._assess_metric("current_ratio", fin.get("current_ratio"))),
-                ("Debt to Equity",
-                 fin.get("debt_to_equity"),
-                 self._assess_metric("debt_equity", fin.get("debt_to_equity"))),
-            ]
-
-            for label, value, assessment in metrics:
-                row = table.add_row()
-                row.cells[0].text = label
-                row.cells[0].paragraphs[0].runs[0].bold = True
-                self._shade_cell(row.cells[0], "E8F0FE")
-                row.cells[1].text = str(value) if value is not None else "N/A"
-                row.cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                row.cells[2].text = assessment
-
-        self.doc.add_paragraph()
-
-    def _add_five_cs_table(self):
-        """Add Five Cs scoring table - the most impressive visual"""
-        self._add_section_heading("4. FIVE Cs CREDIT ASSESSMENT")
-
-        table = self.doc.add_table(rows=1, cols=4)
-        table.style = "Table Grid"
-
-        headers = ["Credit Factor", "Score (0-100)", "Weight", "Rationale"]
-        header_row = table.rows[0]
-        for i, h in enumerate(headers):
-            header_row.cells[i].text = h
-            header_row.cells[i].paragraphs[0].runs[0].bold = True
-            self._shade_cell(header_row.cells[i], "1F3864")
-            header_row.cells[i].paragraphs[0].runs[0].font.color.rgb = (
-                RGBColor(0xFF, 0xFF, 0xFF)
-            )
-
-        five_cs_data = [
-            ("Character", "character_score", "character_rationale", "25%"),
-            ("Capacity", "capacity_score", "capacity_rationale", "30%"),
-            ("Capital", "capital_score", "capital_rationale", "20%"),
-            ("Collateral", "collateral_score", "collateral_rationale", "15%"),
-            ("Conditions", "conditions_score", "conditions_rationale", "10%"),
-        ]
-
-        for label, score_key, rationale_key, weight in five_cs_data:
-            row = table.add_row()
-            score = self.five_cs.get(score_key, "N/A")
-            rationale = self.five_cs.get(rationale_key, "N/A")
-
-            row.cells[0].text = label
-            row.cells[0].paragraphs[0].runs[0].bold = True
-            self._shade_cell(row.cells[0], "E8F0FE")
-            row.cells[1].text = str(score)
-            row.cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-            # color code the score
-            if isinstance(score, (int, float)):
-                if score >= 70:
-                    self._shade_cell(row.cells[1], "C6EFCE")
-                elif score >= 50:
-                    self._shade_cell(row.cells[1], "FFEB9C")
-                else:
-                    self._shade_cell(row.cells[1], "FFC7CE")
-
-            row.cells[2].text = weight
-            row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            row.cells[3].text = str(rationale)
-
-        # overall score row
-        overall_row = table.add_row()
-        overall_score = self.recommendation.get("final_score", "N/A")
-        rating = self.recommendation.get("rating", "N/A")
-
-        overall_row.cells[0].text = "OVERALL SCORE"
-        overall_row.cells[0].paragraphs[0].runs[0].bold = True
-        self._shade_cell(overall_row.cells[0], "1F3864")
-        overall_row.cells[0].paragraphs[0].runs[0].font.color.rgb = (
-            RGBColor(0xFF, 0xFF, 0xFF)
-        )
-        overall_row.cells[1].text = f"{overall_score}/100"
-        overall_row.cells[1].paragraphs[0].runs[0].bold = True
-        overall_row.cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        overall_row.cells[2].text = f"Rating: {rating}"
-        overall_row.cells[2].paragraphs[0].runs[0].bold = True
-        self._shade_cell(overall_row.cells[1], "BDD7EE")
-        self._shade_cell(overall_row.cells[2], "BDD7EE")
-
-        self.doc.add_paragraph()
-
-    def _add_risk_assessment(self, cam_content: dict):
-        """Add risk assessment narrative"""
-        self._add_section_heading("5. RISK ASSESSMENT")
-
-        risk_text = cam_content.get(
-            "risk_assessment",
-            "Risk assessment not available."
-        )
-        self.doc.add_paragraph(risk_text)
-        self.doc.add_paragraph()
-
-    def _add_early_warning_signals(self):
-        """Add early warning signals section"""
-        self._add_section_heading("6. EARLY WARNING SIGNALS")
-
-        # from red flags
-        red_flags = self.financials.get("red_flags", {})
-        flags_list = red_flags.get("red_flags", [])
-
-        # from research
-        research_risks = []
-        for key in ["company_news", "litigation", "regulatory"]:
-            section = self.research.get(key, {})
-            if isinstance(section, dict):
-                risks = section.get("risk_signals", [])
-                if risks:
-                    research_risks.extend(risks)
-
-        all_signals = list(set(flags_list + research_risks))
-
-        if all_signals:
-            table = self.doc.add_table(rows=1, cols=3)
-            table.style = "Table Grid"
-
-            headers = ["#", "Warning Signal", "Severity"]
-            header_row = table.rows[0]
-            for i, h in enumerate(headers):
-                header_row.cells[i].text = h
-                header_row.cells[i].paragraphs[0].runs[0].bold = True
-                self._shade_cell(header_row.cells[i], "FF0000")
-                header_row.cells[i].paragraphs[0].runs[0].font.color.rgb = (
-                    RGBColor(0xFF, 0xFF, 0xFF)
-                )
-
-            severity = red_flags.get("severity", "medium")
-            for i, signal in enumerate(all_signals[:10], 1):
-                row = table.add_row()
-                row.cells[0].text = str(i)
-                row.cells[1].text = str(signal)
-                row.cells[2].text = severity.upper()
-                if severity == "high":
-                    self._shade_cell(row.cells[2], "FFC7CE")
-                elif severity == "medium":
-                    self._shade_cell(row.cells[2], "FFEB9C")
-        else:
-            self.doc.add_paragraph(
-                "No significant early warning signals identified."
-            )
-
-        # manual notes
-        if self.manual_notes:
-            self.doc.add_paragraph()
-            notes_heading = self.doc.add_paragraph()
-            run = notes_heading.add_run("Credit Officer Field Notes:")
-            run.bold = True
-            run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
-            self.doc.add_paragraph(self.manual_notes)
-
-        self.doc.add_paragraph()
-
-    def _add_recommendation_section(self):
-        """Add final recommendation - the most important section"""
-        self._add_section_heading("7. RECOMMENDATION & DECISION")
-
-        decision = self.recommendation.get("decision", "PENDING")
-        amount = self.recommendation.get("recommended_amount_crores")
-        rate = self.recommendation.get("interest_rate_percent")
-        tenure = self.recommendation.get("tenure_months")
-        rationale = self.recommendation.get("decision_rationale", "")
-        conditions = self.recommendation.get("key_conditions", [])
-        rejection_reason = self.recommendation.get("rejection_reason")
-
-        # decision summary table
-        table = self.doc.add_table(rows=1, cols=2)
-        table.style = "Table Grid"
-
-        decision_data = [
-            ("CREDIT DECISION", decision),
-            ("Recommended Amount",
-             f"₹ {amount} Crores" if amount else "N/A"),
-            ("Interest Rate",
-             f"{rate}% p.a." if rate else "N/A"),
-            ("Tenure",
-             f"{tenure} months" if tenure else "N/A"),
-            ("Risk Premium",
-             f"{self.recommendation.get('risk_premium_percent', 'N/A')}%"),
-            ("Credit Rating",
-             self.recommendation.get("rating", "N/A")),
-        ]
-
-        header_row = table.rows[0]
-        header_row.cells[0].text = "Parameter"
-        header_row.cells[1].text = "Value"
-        for cell in header_row.cells:
-            cell.paragraphs[0].runs[0].bold = True
-            self._shade_cell(cell, "1F3864")
-            cell.paragraphs[0].runs[0].font.color.rgb = (
-                RGBColor(0xFF, 0xFF, 0xFF)
-            )
-
-        color_map = {
-            "APPROVE": "C6EFCE",
-            "CONDITIONAL_APPROVE": "FFEB9C",
-            "REJECT": "FFC7CE",
-        }
-        decision_color = color_map.get(decision, "FFFFFF")
-
-        for label, value in decision_data:
-            row = table.add_row()
-            row.cells[0].text = label
-            row.cells[0].paragraphs[0].runs[0].bold = True
-            self._shade_cell(row.cells[0], "E8F0FE")
-            row.cells[1].text = str(value) if value else "N/A"
-            if label == "CREDIT DECISION":
-                self._shade_cell(row.cells[1], decision_color)
-                row.cells[1].paragraphs[0].runs[0].bold = True
-
-        self.doc.add_paragraph()
-
-        # rationale
-        rationale_heading = self.doc.add_paragraph()
-        run = rationale_heading.add_run("Decision Rationale:")
-        run.bold = True
-        run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
-        self.doc.add_paragraph(rationale or "No rationale provided.")
-
-        # rejection reason
-        if rejection_reason:
-            self.doc.add_paragraph()
-            rej_heading = self.doc.add_paragraph()
-            run = rej_heading.add_run("Reason for Rejection:")
-            run.bold = True
-            run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
-            self.doc.add_paragraph(rejection_reason)
-
-        # conditions precedent
+        # Key conditions
+        conditions = rec.get("key_conditions", [])
         if conditions:
-            self.doc.add_paragraph()
-            cond_heading = self.doc.add_paragraph()
-            run = cond_heading.add_run("Conditions Precedent:")
-            run.bold = True
-            run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
-            for i, condition in enumerate(conditions, 1):
-                self.doc.add_paragraph(
-                    f"{i}. {condition}",
-                    style="List Number"
-                )
+            p2 = doc.add_paragraph()
+            p2.add_run("Key Conditions: ").bold = True
+            p2.add_run("; ".join(str(c) for c in conditions))
 
-        self.doc.add_paragraph()
+        doc.add_paragraph()
+        p3 = doc.add_paragraph()
+        p3.add_run(f"Date of Appraisal: ").bold = True
+        p3.add_run(datetime.now().strftime("%d %B %Y"))
+        if loan_purpose:
+            p3.add_run(f"   |   Loan Purpose: ").bold = True
+            p3.add_run(str(loan_purpose))
 
-    def _add_footer(self):
-        """Add document footer"""
-        self._add_horizontal_line()
-        footer_para = self.doc.add_paragraph()
-        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = footer_para.add_run(
-            f"Generated by Intelli-Credit AI Engine  |  "
-            f"DOMINIX  |  {datetime.now().strftime('%d-%b-%Y %H:%M')}  |  "
-            f"CONFIDENTIAL - For Internal Use Only"
+    # ================================================================== #
+    def _add_company_background(self, doc, financials: dict, company_name: str):
+        self._section_heading(doc, "COMPANY BACKGROUND")
+        basic = financials if isinstance(financials, dict) else {}
+
+        # Handle directors as list of dicts OR list of strings
+        directors_raw = basic.get("directors", []) or []
+        directors_str = ", ".join([
+            d.get("name", str(d)) if isinstance(d, dict) else str(d)
+            for d in directors_raw
+        ]) or "Not extracted"
+
+        promoters_raw = basic.get("promoters", []) or []
+        promoters_str = ", ".join([
+            p.get("name", str(p)) if isinstance(p, dict) else str(p)
+            for p in promoters_raw
+        ]) or "Not extracted"
+
+        rows = [
+            ("Company Name",     basic.get("company_name", company_name) or company_name),
+            ("CIN",              basic.get("cin",          "Not extracted")),
+            ("Directors",        directors_str),
+            ("Promoters",        promoters_str),
+            ("Extraction Notes", basic.get("extraction_notes", "—")),
+        ]
+
+        table = doc.add_table(rows=len(rows), cols=2)
+        table.style = "Table Grid"
+        table.columns[0].width = Inches(2.0)
+        table.columns[1].width = Inches(5.0)
+
+        for i, (label, value) in enumerate(rows):
+            lc = table.cell(i, 0); vc = table.cell(i, 1)
+            _set_cell_bg(lc, self.LIGHT_BLUE)
+            lc.text = label; lc.paragraphs[0].runs[0].bold = True
+            vc.text = str(value) if value else "—"
+
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_financial_analysis(self, doc, financials: dict):
+        self._section_heading(doc, "FINANCIAL ANALYSIS")
+
+        f = financials if isinstance(financials, dict) else {}
+
+        def fmt(val, suffix="Cr"):
+            if val is None or val == "":
+                return "N/A"
+            try:
+                return f"₹{float(val):,.0f} {suffix}"
+            except Exception:
+                return str(val)
+
+        def fmt_pct(val):
+            if val is None: return "N/A"
+            try: return f"{float(val):.1f}%"
+            except Exception: return str(val)
+
+        def fmt_ratio(val):
+            if val is None: return "N/A"
+            try: return f"{float(val):.2f}x"
+            except Exception: return str(val)
+
+        rows = [
+            ("Revenue",            fmt(f.get("revenue_crores"))),
+            ("Revenue Growth",     fmt_pct(f.get("revenue_growth_percent"))),
+            ("Profit After Tax",   fmt(f.get("profit_after_tax_crores"))),
+            ("EBITDA",             fmt(f.get("ebitda_crores"))),
+            ("EBITDA Margin",      fmt_pct(f.get("ebitda_margin_percent"))),
+            ("Total Assets",       fmt(f.get("total_assets_crores"))),
+            ("Net Worth",          fmt(f.get("net_worth_crores"))),
+            ("Total Borrowings",   fmt(f.get("total_borrowings_crores"))),
+            ("Debt / Equity",      fmt_ratio(f.get("debt_equity_ratio"))),
+            ("Current Ratio",      fmt_ratio(f.get("current_ratio"))),
+            ("Interest Coverage",  fmt_ratio(f.get("interest_coverage_ratio"))),
+            ("Return on Equity",   fmt_pct(f.get("return_on_equity_percent"))),
+        ]
+
+        table = doc.add_table(rows=len(rows) + 1, cols=2)
+        table.style = "Table Grid"
+
+        # Header
+        _set_cell_bg(table.cell(0, 0), self.VIVRITI_BLUE)
+        _set_cell_bg(table.cell(0, 1), self.VIVRITI_BLUE)
+        _bold_cell(table.cell(0, 0), "Metric",      color="FFFFFF")
+        _bold_cell(table.cell(0, 1), "Value (FY Latest)", color="FFFFFF")
+
+        for i, (label, value) in enumerate(rows, start=1):
+            lc = table.cell(i, 0); vc = table.cell(i, 1)
+            if i % 2 == 0: _set_cell_bg(lc, self.LIGHT_GREY); _set_cell_bg(vc, self.LIGHT_GREY)
+            lc.text = label; vc.text = str(value)
+
+        # Red flags
+        red_flags = f.get("red_flags", {})
+        if any(red_flags.values()):
+            doc.add_paragraph()
+            p = doc.add_paragraph()
+            p.add_run("⚠ Red Flags Detected: ").bold = True
+            flags_found = [k.replace("_", " ").title() for k, v in red_flags.items() if v]
+            p.add_run(", ".join(flags_found))
+            p.runs[-1].font.color.rgb = RGBColor.from_string(self.RED_ALERT)
+
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_five_cs(self, doc, scoring: dict):
+        self._section_heading(doc, "FIVE Cs OF CREDIT ASSESSMENT")
+
+        five_cs    = scoring.get("five_cs",    {})
+        risk_score = scoring.get("risk_score", {})
+
+        cs_items = [
+            ("Character",  "character",  "25%", "👤"),
+            ("Capacity",   "capacity",   "30%", "💰"),
+            ("Capital",    "capital",    "20%", "🏛️"),
+            ("Collateral", "collateral", "15%", "🔒"),
+            ("Conditions", "conditions", "10%", "🌍"),
+        ]
+
+        table = doc.add_table(rows=len(cs_items) + 1, cols=4)
+        table.style = "Table Grid"
+
+        # Header row
+        for i, h in enumerate(["C", "Score", "Weight", "Rationale"]):
+            hc = table.cell(0, i)
+            _set_cell_bg(hc, self.VIVRITI_BLUE)
+            _bold_cell(hc, h, color="FFFFFF")
+
+        for row_idx, (name, key, weight, icon) in enumerate(cs_items, start=1):
+            score     = five_cs.get(f"{key}_score",     "N/A")
+            rationale = five_cs.get(f"{key}_rationale", "N/A")
+
+            nc = table.cell(row_idx, 0); sc = table.cell(row_idx, 1)
+            wc = table.cell(row_idx, 2); rc = table.cell(row_idx, 3)
+
+            if row_idx % 2 == 0:
+                for c in [nc, sc, wc, rc]:
+                    _set_cell_bg(c, self.LIGHT_BLUE)
+
+            nc.text = f"{icon} {name}"; nc.paragraphs[0].runs[0].bold = True
+            sc.text = str(score)
+            wc.text = weight
+            rc.text = str(rationale)
+
+        doc.add_paragraph()
+
+        # Score breakdown
+        p = doc.add_paragraph()
+        p.add_run("Weighted Score: ").bold = True
+        p.add_run(f"{risk_score.get('weighted_score', 'N/A')}/100")
+        p.add_run("   |   ")
+        p.add_run("Penalty Applied: ").bold = True
+        p.add_run(f"{risk_score.get('penalty_applied', 0)} points")
+        p.add_run("   |   ")
+        p.add_run("Final Score: ").bold = True
+        p.add_run(f"{risk_score.get('final_score', 'N/A')}/100")
+
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_research_intelligence(self, doc, research: dict, scoring: dict = None):
+        self._section_heading(doc, "SECONDARY RESEARCH INTELLIGENCE")
+
+        sections = [
+            ("Company News",      "company_news",       "summary"),
+            ("Promoter Background","promoter_background","summary"),
+            ("Sector Headwinds",  "sector_headwinds",   "summary"),
+            ("Litigation",        "litigation",          "summary"),
+            ("Regulatory",        "regulatory",          "summary"),
+            ("MCA Signals",       "mca_signals",         "summary"),
+        ]
+
+        for label, key, summary_field in sections:
+            section_data = research.get(key, {})
+            if not section_data:
+                continue
+
+            p = doc.add_paragraph()
+            p.add_run(f"{label}: ").bold = True
+            p.add_run(str(section_data.get(summary_field, "No data available.")))
+            doc.add_paragraph()
+
+        # Overall sentiment — use computed research_rating from recommendation if available
+        overall = research.get("overall_sentiment", {})
+        rec_research = (scoring or {}).get("recommendation", {}).get("research_rating", {})
+        if overall:
+            p = doc.add_paragraph()
+            p.add_run("Overall Research Rating: ").bold = True
+            # Prefer the structured rubric grade (A/B/C/D) over Gemini's raw sentiment
+            rr_grade = rec_research.get("grade") or overall.get("risk_rating", "N/A")
+            rr_label = rec_research.get("label") or overall.get("preliminary_recommendation", "N/A")
+            p.add_run(f"{rr_grade} — {rr_label}")
+
+            top_risks = overall.get("top_risks", [])
+            if top_risks:
+                p2 = doc.add_paragraph()
+                p2.add_run("Top Risks Identified: ").bold = True
+                p2.add_run("; ".join(str(r) for r in top_risks))
+
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_cross_reference(self, doc, cross_ref: dict):
+        self._section_heading(doc, "CROSS-DOCUMENT FRAUD INTELLIGENCE")
+
+        if not cross_ref.get("cross_reference_performed"):
+            doc.add_paragraph(cross_ref.get("reason", "Cross-reference not performed."))
+            doc.add_paragraph()
+            return
+
+        p = doc.add_paragraph()
+        p.add_run("Documents Compared: ").bold = True
+        p.add_run(", ".join(cross_ref.get("documents_compared", [])))
+
+        p2 = doc.add_paragraph()
+        p2.add_run("Circular Trading Risk: ").bold = True
+        p2.add_run(cross_ref.get("circular_trading_risk", "N/A"))
+
+        p3 = doc.add_paragraph()
+        p3.add_run("Revenue Inflation Risk: ").bold = True
+        p3.add_run(cross_ref.get("revenue_inflation_risk", "N/A"))
+
+        flags = cross_ref.get("flags", [])
+        if flags:
+            doc.add_paragraph()
+            p4 = doc.add_paragraph()
+            p4.add_run("⚠ Flags Detected:").bold = True
+            for flag in flags:
+                fp = doc.add_paragraph(style="List Bullet")
+                fp.add_run(f"[{flag.get('severity','?')}] {flag.get('type','?')}: ").bold = True
+                fp.add_run(flag.get("description", ""))
+
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_field_notes(self, doc, manual_notes: str):
+        self._section_heading(doc, "CREDIT OFFICER FIELD OBSERVATIONS")
+        p = doc.add_paragraph(manual_notes)
+        p.runs[0].italic = True
+        doc.add_paragraph()
+
+    # ================================================================== #
+    def _add_recommendation(self, doc, scoring: dict):
+        self._section_heading(doc, "FINAL RECOMMENDATION")
+
+        rec      = scoring.get("recommendation", {})
+        decision = rec.get("decision", "N/A")
+
+        # Decision box
+        table = doc.add_table(rows=1, cols=1)
+        cell  = table.cell(0, 0)
+        color = self.GREEN_OK if decision == "APPROVE" else \
+                self.ORANGE_WARN if decision == "CONDITIONAL_APPROVE" else self.RED_ALERT
+        _set_cell_bg(cell, color)
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(f"RECOMMENDATION: {decision}")
+        r.bold = True; r.font.size = Pt(14); r.font.color.rgb = RGBColor(255,255,255)
+
+        doc.add_paragraph()
+
+        rows = [
+            ("Decision",           str(decision)),
+            ("Credit Rating",      str(rec.get("rating", "N/A"))),
+            ("Credit Score",       f"{rec.get('final_score', 'N/A')}/100"),
+            ("Recommended Amount", f"₹{rec.get('recommended_amount_crores','N/A')} Cr"),
+            ("Interest Rate",      f"{rec.get('interest_rate_percent','N/A')}%"),
+            ("Tenure",             f"{rec.get('tenure_months','N/A')} months"),
+        ]
+
+        table2 = doc.add_table(rows=len(rows), cols=2)
+        table2.style = "Table Grid"
+        for i, (label, value) in enumerate(rows):
+            lc = table2.cell(i, 0); vc = table2.cell(i, 1)
+            _set_cell_bg(lc, self.LIGHT_BLUE)
+            lc.text = label; lc.paragraphs[0].runs[0].bold = True
+            vc.text = value
+
+        doc.add_paragraph()
+
+        # Rationale
+        rationale = rec.get("decision_rationale") or rec.get("rejection_reason") or ""
+        if rationale:
+            p2 = doc.add_paragraph()
+            p2.add_run("Rationale: ").bold = True
+            p2.add_run(str(rationale))
+
+        conditions = rec.get("key_conditions", [])
+        if conditions:
+            doc.add_paragraph()
+            doc.add_paragraph().add_run("Conditions Precedent:").bold = True
+            for c in conditions:
+                cp = doc.add_paragraph(style="List Bullet")
+                cp.add_run(str(c))
+
+        doc.add_paragraph()
+        disc = doc.add_paragraph(
+            "Disclaimer: This Credit Appraisal Memo has been prepared using AI-assisted analysis "
+            "by Intelli-Credit (DOMINIX). All recommendations are subject to review and approval "
+            "by authorized credit officers as per Vivriti Capital's credit policy."
         )
-        run.font.size = Pt(8)
-        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+        disc.runs[0].italic = True
+        disc.runs[0].font.size = Pt(8)
 
-    # ── Helper Methods ──────────────────────────────────────
+    # ================================================================== #
+    def _add_footer(self, doc):
+        doc.add_paragraph()
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(
+            f"Intelli-Credit by DOMINIX  ·  Vivriti Capital Hackathon 2026  ·  "
+            f"Generated: {datetime.now().strftime('%d %b %Y %H:%M')}"
+        )
+        r.font.size  = Pt(8)
+        r.font.color.rgb = RGBColor.from_string(self.VIVRITI_BLUE)
 
-    def _add_section_heading(self, text: str):
-        """Add a styled section heading"""
-        para = self.doc.add_paragraph()
-        run = para.add_run(text)
+    # ================================================================== #
+    def _section_heading(self, doc, text: str):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        run = p.add_run(text)
         run.bold = True
-        run.font.size = Pt(12)
-        run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
-        para.paragraph_format.space_before = Pt(12)
-        para.paragraph_format.space_after = Pt(6)
-
-    def _add_horizontal_line(self):
-        """Add a horizontal divider line"""
-        para = self.doc.add_paragraph()
-        pPr = para._p.get_or_add_pPr()
-        pBdr = OxmlElement('w:pBdr')
-        bottom = OxmlElement('w:bottom')
-        bottom.set(qn('w:val'), 'single')
-        bottom.set(qn('w:sz'), '6')
-        bottom.set(qn('w:space'), '1')
-        bottom.set(qn('w:color'), '1F3864')
-        pBdr.append(bottom)
-        pPr.append(pBdr)
-
-    def _shade_cell(self, cell, hex_color: str):
-        """Apply background color to a table cell"""
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        shd = OxmlElement('w:shd')
-        shd.set(qn('w:val'), 'clear')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'), hex_color)
-        tcPr.append(shd)
-
-    def _shade_paragraph_background(self, para, hex_color: str):
-        """Shade paragraph background (for recommendation badge)"""
-        pPr = para._p.get_or_add_pPr()
-        shd = OxmlElement('w:shd')
-        shd.set(qn('w:val'), 'clear')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'), hex_color)
-        pPr.append(shd)
-
-    def _assess_metric(self, metric: str, value) -> str:
-        """Simple assessment of financial metrics"""
-        if value is None:
-            return "N/A"
-        try:
-            v = float(value)
-        except Exception:
-            return "N/A"
-
-        assessments = {
-            "current_ratio": (
-                "Strong" if v >= 2 else
-                "Adequate" if v >= 1.2 else "Weak"
-            ),
-            "debt_equity": (
-                "Conservative" if v <= 1 else
-                "Moderate" if v <= 2.5 else "High Leverage"
-            ),
-            "pat": (
-                "Profitable" if v > 0 else "Loss Making"
-            ),
-            "net_worth": (
-                "Strong" if v > 100 else
-                "Adequate" if v > 20 else "Thin"
-            ),
-            "ebitda": (
-                "Strong" if v > 50 else
-                "Adequate" if v > 10 else "Weak"
-            ),
-            "revenue": (
-                "Large" if v > 500 else
-                "Mid-size" if v > 100 else "Small"
-            ),
-        }
-        return assessments.get(metric, "—")
-
-    def _parse_json(self, text: str) -> dict:
-        """Safely parse Gemini JSON response"""
-        try:
-            text = re.sub(r'```json\s*', '', text)
-            text = re.sub(r'```\s*', '', text)
-            text = text.strip()
-            return json.loads(text)
-        except Exception:
-            return {
-                "executive_summary": text[:500],
-                "company_background": "See full analysis above.",
-                "financial_analysis": "Refer to financial tables.",
-                "risk_assessment": "Refer to Five Cs assessment.",
-                "early_warning_signals": [],
-                "recommendation_narrative": text[-500:],
-            }
+        run.font.size  = Pt(12)
+        run.font.color.rgb = RGBColor.from_string(self.VIVRITI_BLUE)
+        # Underline via border — simpler: just underline
+        run.underline = True
+        doc.add_paragraph()

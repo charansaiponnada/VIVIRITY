@@ -1,0 +1,60 @@
+{
+  "record_id": "af3ecc0764fe",
+  "company_name": "Tata Motors Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-07T15:21:23.074540",
+  "ml_probability_of_lending": 0.8971,
+  "ml_score": 89.7,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "sector_strong",
+      "contribution": 0.3,
+      "interpretation": "Favourable sector conditions"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    },
+    {
+      "feature": "debt_equity_ratio",
+      "contribution": -0.054,
+      "interpretation": "High leverage \u2192 elevated financial risk"
+    }
+  ],
+  "five_cs_weighted_score": 87.85,
+  "five_cs_final_score": 62.85,
+  "five_cs_rating": "BB",
+  "penalty_applied": 25.0,
+  "final_decision": "CONDITIONAL_APPROVE",
+  "final_rating": "BB",
+  "interest_rate_percent": 13.5,
+  "recommended_amount_crores": 500,
+  "tenure_months": 36,
+  "decision_rationale": "The decision to Conditional Approve is based on the overall risk score of 62.85, which falls within the 50-74 range. Tata Motors exhibits exceptional strengths in several key 'Cs'. The Character score of 92 reflects an impeccable promoter background, strong governance, and a clean regulatory record, indicating very low risk. The Capital score of 97 is outstanding, highlighting an exceptionally strong capital structure with a low Debt/Equity ratio (0.6x) and a net cash position (-1,018 crores net debt), providing substantial financial flexibility. The Capacity score of 83 demonstrates robust operational performance, evidenced by significant revenue (439,695 crores), a healthy EBITDA margin (13.11%), and strong profitability (PAT 28,149 crores), alongside excellent return ratios (ROE 28.0%, ROCE 17.6%). While these fundamental strengths are considerable, the overall score indicates a need for specific conditions to address certain information gaps, particularly regarding explicit cash flow metrics (ICR and DSCR) mentioned as missing in the Capacity assessment, and to ensure comprehensive collateral documentation."
+}
