@@ -1,0 +1,55 @@
+{
+  "record_id": "2d094f694933",
+  "company_name": "Yes Bank",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T16:47:45.894652",
+  "ml_probability_of_lending": 0.6388,
+  "ml_score": 63.9,
+  "ml_rating": "BBB",
+  "ml_decision": "CONDITIONAL_APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.35,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.32,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "provision_coverage_ratio_percent",
+      "contribution": 0.144,
+      "interpretation": "Feature contribution: 0.144"
+    },
+    {
+      "feature": "capital_adequacy_ratio_percent",
+      "contribution": 0.1248,
+      "interpretation": "Feature contribution: 0.125"
+    },
+    {
+      "feature": "return_on_assets_percent",
+      "contribution": 0.0312,
+      "interpretation": "Feature contribution: 0.031"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.4,
+      "interpretation": "Feature contribution: -0.400"
+    }
+  ],
+  "five_cs_weighted_score": 68.0,
+  "five_cs_final_score": 55.2,
+  "five_cs_rating": "B",
+  "penalty_applied": 12.8,
+  "final_decision": "CONDITIONAL_APPROVE",
+  "final_rating": "B",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 222.0,
+  "tenure_months": 60,
+  "decision_rationale": "Yes Bank receives a 'CONDITIONAL_APPROVE' primarily due to its strong Capital (80) and Collateral (85) scores, supported by a healthy capital adequacy ratio of 15.6% and substantial assets with a low net NPA of 0.3%. Despite a modest Capacity score (60) reflected in a 0.6% Return on Assets, the bank's operational stability is bolstered by a supportive regulatory environment, indicated by a Conditions score of 75. However, the significantly lower Character score (55), impacted by past promoter issues, necessitates strict conditions to mitigate residual risk."
+}

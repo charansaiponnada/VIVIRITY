@@ -1,0 +1,63 @@
+{
+  "record_id": "61be4f306001",
+  "company_name": "YES BANK Limited",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-08T15:51:10.839564",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.67,
+  "cin": "L65190MH2003PLC143249",
+  "directors": [
+    "Rama Subramaniam Gandhi (Chairman)",
+    "Dr. Rajan Pental (Executive Director)",
+    "Mr. Manish Jain (Executive Director)",
+    {
+      "name": "Rama Subramaniam Gandhi",
+      "designation": "Chairman"
+    },
+    {
+      "name": "Dr. Rajan Pental",
+      "designation": "Executive Director"
+    },
+    {
+      "name": "Mr. Manish Jain",
+      "designation": "Executive Director"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": 2025,
+  "revenue_crores": 14801,
+  "revenue_growth_percent": null,
+  "profit_after_tax_crores": 2406,
+  "profit_before_tax_crores": null,
+  "ebitda_crores": 223240.96,
+  "ebitda_margin_percent": 1508.28,
+  "depreciation_crores": null,
+  "finance_cost_crores": 219505.64,
+  "operating_cash_flow_crores": null,
+  "capex_crores": null,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": true,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [
+    2,
+    11
+  ],
+  "extraction_notes": "PBT, EBITDA, Depreciation, Finance Cost, and Cash Flow figures could not be extracted as the relevant detailed financial statements (e.g., full income statement or cash flow statement) were not provided in the input text. The complete list of directors could not be extracted as pages 20 (Board of Directors) and 24 (Management Team) were indicated in the 'Contents' but not included in the provided text. 'Total Net Income' (\u20b914,801 crore) is used as primary revenue. It is assumed to be a consolidated figure as per instructions, although not explicitly stated as such in the 'Key highlights'. Net Profit for FY 2024-25 is \u20b92,406 crore, which represents a 92.3% Y-o-Y increase, but the prior year's net profit was not provided to explicitly calculate the growth rate.",
+  "total_assets_crores": 423422,
+  "total_borrowings_crores": 71603,
+  "return_on_assets_percent": 0.6,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "ebitda_computed_from": "PAT\u00d71.35 + FinCost + est.Dep (approximated)",
+  "interest_coverage_ratio": 1.02,
+  "ratios_computed": [
+    "EBITDA\u2248223241Cr",
+    "EBITDA_margin=1508.3%",
+    "ICR=1.02x"
+  ]
+}

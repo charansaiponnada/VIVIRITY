@@ -1,0 +1,60 @@
+{
+  "record_id": "18a7e7ab5738",
+  "company_name": "YES BANK Limited",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-08T14:54:14.514687",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.67,
+  "cin": "L65190MH2003PLC143249",
+  "directors": [
+    {
+      "name": "Rama Subramaniam Gandhi",
+      "role": "Chairman"
+    },
+    {
+      "name": "Dr. Rajan Pental",
+      "designation": "Executive Director"
+    },
+    {
+      "name": "Mr. Manish Jain",
+      "designation": "Executive Director"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": "FY 2024-25",
+  "revenue_crores": 14801,
+  "revenue_growth_percent": null,
+  "profit_after_tax_crores": 2406,
+  "profit_before_tax_crores": null,
+  "ebitda_crores": 223240.96,
+  "ebitda_margin_percent": 1508.28,
+  "depreciation_crores": null,
+  "finance_cost_crores": 219505.64,
+  "operating_cash_flow_crores": null,
+  "capex_crores": null,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": true,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [
+    2,
+    11
+  ],
+  "extraction_notes": "Financial data extracted from 'Key highlights FY 2024-25' and Chairman's message, which are introductory sections. Comprehensive financial statements (Income Statement, Cash Flow) and a full list of directors are typically found in later sections (e.g., Consolidated Financials starting Page 438, Board of Directors on Page 20) which were not provided in the text. 'Total Net Income' is used as the primary revenue for the bank. 'Net Profit' is considered Profit After Tax. EBITDA, Profit Before Tax, Depreciation, Finance Cost, Operating Cash Flow, Capex, and Free Cash Flow could not be extracted due to the absence of the detailed financial statements.",
+  "total_assets_crores": 423422.0,
+  "total_borrowings_crores": 71603.0,
+  "return_on_assets_percent": 0.6,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "ebitda_computed_from": "PAT\u00d71.35 + FinCost + est.Dep (approximated)",
+  "interest_coverage_ratio": 1.02,
+  "ratios_computed": [
+    "EBITDA\u2248223241Cr",
+    "EBITDA_margin=1508.3%",
+    "ICR=1.02x"
+  ]
+}

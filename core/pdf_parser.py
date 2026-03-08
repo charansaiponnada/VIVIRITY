@@ -1,6 +1,19 @@
 import fitz          # PyMuPDF - fast full scan
 import pdfplumber    # accurate table extraction
 import re
+import io
+
+# OCR fallback for scanned PDFs — evaluation criterion #1
+try:
+    import pytesseract
+    from PIL import Image
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    print("[pdf_parser] pytesseract not installed — OCR fallback disabled. "
+          "Install with: pip install pytesseract Pillow")
+
+OCR_TEXT_THRESHOLD = 50  # fewer chars than this triggers OCR
 
 class PageIndexParser:
     """
@@ -111,6 +124,7 @@ class PageIndexParser:
         target_pages = self._get_target_pages(fast_index)
 
         # ── Pass 2 ───────────────────────────────────────────
+        ocr_pages_used = 0
         with pdfplumber.open(self.pdf_path) as pdf:
             for page_num in target_pages:
                 if page_num > len(pdf.pages):
@@ -119,6 +133,15 @@ class PageIndexParser:
                 text   = page.extract_text() or \
                          fast_index[page_num]["raw_text"]  # fallback to Pass 1 text
                 tables = page.extract_tables() or []
+                ocr_used = False
+
+                # OCR fallback for scanned pages
+                if len(text.strip()) < OCR_TEXT_THRESHOLD and OCR_AVAILABLE:
+                    ocr_text = self._ocr_page(page_num - 1)
+                    if len(ocr_text.strip()) > len(text.strip()):
+                        text = ocr_text
+                        ocr_used = True
+                        ocr_pages_used += 1
 
                 self.pages[page_num] = {
                     "text":          text,
@@ -126,9 +149,13 @@ class PageIndexParser:
                     "section":       fast_index[page_num]["section"],
                     "has_financials": self._has_financial_data(text),
                     "page_number":   page_num,
+                    "ocr_used":      ocr_used,
                 }
                 if self._has_financial_data(text):
                     self.financial_pages.append(page_num)
+
+        if ocr_pages_used:
+            print(f"[OCR] Used OCR on {ocr_pages_used}/{len(target_pages)} targeted pages")
 
         self.sections = self._build_section_index()
 
@@ -140,6 +167,7 @@ class PageIndexParser:
             "section_ranges":  self.section_ranges,
             "financial_pages": self.financial_pages,
             "is_sampled":      True,
+            "ocr_pages_used":  ocr_pages_used,
             "summary":         self._generate_summary(),
         }
 
@@ -191,21 +219,52 @@ class PageIndexParser:
 
     # ── Full parse (small PDFs) ───────────────────────────────────
 
+    def _ocr_page(self, page_num_0based: int) -> str:
+        """OCR a single page using PyMuPDF pixmap + pytesseract."""
+        if not OCR_AVAILABLE:
+            return ""
+        try:
+            doc = fitz.open(self.pdf_path)
+            page = doc[page_num_0based]
+            pix = page.get_pixmap(dpi=300)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            doc.close()
+            text = pytesseract.image_to_string(img, lang="eng")
+            return text or ""
+        except Exception as e:
+            print(f"[OCR] Page {page_num_0based + 1} failed: {e}")
+            return ""
+
     def _full_parse(self) -> dict:
         """Full pdfplumber parse for documents under 50 pages."""
+        ocr_pages_used = 0
         with pdfplumber.open(self.pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
                 text   = page.extract_text() or ""
                 tables = page.extract_tables() or []
+                ocr_used = False
+
+                # OCR fallback for scanned pages
+                if len(text.strip()) < OCR_TEXT_THRESHOLD and OCR_AVAILABLE:
+                    ocr_text = self._ocr_page(page_num - 1)
+                    if len(ocr_text.strip()) > len(text.strip()):
+                        text = ocr_text
+                        ocr_used = True
+                        ocr_pages_used += 1
+
                 self.pages[page_num] = {
                     "text":          text,
                     "tables":        tables,
                     "section":       self._detect_section(text),
                     "has_financials": self._has_financial_data(text),
                     "page_number":   page_num,
+                    "ocr_used":      ocr_used,
                 }
                 if self._has_financial_data(text):
                     self.financial_pages.append(page_num)
+
+        if ocr_pages_used:
+            print(f"[OCR] Used OCR on {ocr_pages_used}/{len(self.pages)} pages")
 
         self.sections = self._build_section_index()
 
@@ -215,6 +274,7 @@ class PageIndexParser:
             "sections":        self.sections,
             "financial_pages": self.financial_pages,
             "is_sampled":      False,
+            "ocr_pages_used":  ocr_pages_used,
             "summary":         self._generate_summary(),
         }
 

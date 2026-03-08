@@ -1,0 +1,55 @@
+{
+  "record_id": "f088e5ec328e",
+  "company_name": "Yes Bank",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T15:51:10.848908",
+  "ml_probability_of_lending": 0.8742,
+  "ml_score": 87.4,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "sector_stable",
+      "contribution": 0.15,
+      "interpretation": "Stable sector \u2014 neutral to mildly positive for lending"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 78.3,
+  "five_cs_final_score": 73.5,
+  "five_cs_rating": "BBB",
+  "penalty_applied": 4.8,
+  "final_decision": "APPROVE",
+  "final_rating": "A",
+  "interest_rate_percent": 12.5,
+  "recommended_amount_crores": 222.0,
+  "tenure_months": 60,
+  "decision_rationale": "The loan for Yes Bank is approved, reflecting a strong Blended Risk Score of 79.76/100 and an 'A' rating. The bank exhibits robust Character (88) and strong Capacity (82), underscored by an exceptional EBITDA margin and positive Q1 FY2025-26 results, despite a thin Interest Coverage Ratio and an NPA mention. Substantial Capital (65) and Collateral (78) are evident from its significant asset base and proactive capital raise initiatives. Favorable industry Conditions (70) and strategic growth plans further bolster its profile, supporting the proposed expansion of digital banking infrastructure and lending capacity. This approval is well-justified by the overall financial health and strategic direction, despite the minor penalty for NPA classification mentioned."
+}

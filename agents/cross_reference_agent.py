@@ -81,7 +81,94 @@ class CrossReferenceAgent:
 
         # Bank statement vs Annual Report cash flow
         if "bank_statement" in self.documents and "annual_report" in self.documents:
-            findings["bank_vs_annual_report"] = "Bank statement cross-check performed"
+            bank = self.documents["bank_statement"]
+            ar   = self.documents["annual_report"]
+
+            bank_credits = None
+            for key in ["total_credits_crores", "revenue_crores"]:
+                val = bank.get(key)
+                if val is not None:
+                    try:
+                        bank_credits = float(str(val).replace(",", "").replace("₹", "").strip())
+                        break
+                    except Exception:
+                        pass
+
+            ar_rev = self._extract_revenue(ar)
+
+            findings["bank_vs_annual_report"] = {
+                "bank_credits": bank_credits,
+                "ar_revenue": ar_rev,
+            }
+
+            if bank_credits and ar_rev and ar_rev > 0:
+                ratio = bank_credits / ar_rev
+                if ratio < 0.50:
+                    flags.append({
+                        "type":        "CASH_FLOW_CONCERN",
+                        "severity":    "MEDIUM",
+                        "description": f"Bank credits ({bank_credits:.0f} Cr) are only {ratio*100:.0f}% of reported revenue ({ar_rev:.0f} Cr) — possible off-books transactions",
+                    })
+                elif ratio > 1.50:
+                    flags.append({
+                        "type":        "CIRCULAR_TRADING",
+                        "severity":    "HIGH",
+                        "description": f"Bank credits ({bank_credits:.0f} Cr) are {ratio*100:.0f}% of reported revenue ({ar_rev:.0f} Cr) — circular trading suspect",
+                    })
+
+            # Bounce check
+            bounce_count = bank.get("bounce_count", 0) or 0
+            if bounce_count > 5:
+                flags.append({
+                    "type":        "BOUNCE_CONCERN",
+                    "severity":    "MEDIUM" if bounce_count <= 10 else "HIGH",
+                    "description": f"{bounce_count} bounced transactions detected in bank statement",
+                })
+
+        # GST: GSTR-2A vs GSTR-3B ITC mismatch detection
+        if "gst_filing" in self.documents:
+            gst = self.documents["gst_filing"]
+            gstr2a_itc = gst.get("gstr2a_itc_crores")
+            gstr3b_itc = gst.get("gstr3b_itc_claimed_crores")
+
+            if gstr2a_itc is not None and gstr3b_itc is not None:
+                try:
+                    gstr2a_itc = float(gstr2a_itc)
+                    gstr3b_itc = float(gstr3b_itc)
+                    if gstr2a_itc > 0:
+                        itc_mismatch = abs(gstr3b_itc - gstr2a_itc) / gstr2a_itc
+                        if itc_mismatch > 0.10:
+                            severity = "HIGH" if itc_mismatch > 0.25 else "MEDIUM"
+                            flags.append({
+                                "type":        "FAKE_ITC_RISK",
+                                "severity":    severity,
+                                "description": f"GSTR-2A ITC ({gstr2a_itc:.1f} Cr) vs GSTR-3B ITC claimed ({gstr3b_itc:.1f} Cr) — {itc_mismatch*100:.1f}% mismatch. Possible fake Input Tax Credit.",
+                            })
+                            findings["gstr2a_vs_gstr3b"] = {
+                                "gstr2a_itc": gstr2a_itc,
+                                "gstr3b_itc_claimed": gstr3b_itc,
+                                "mismatch_percent": round(itc_mismatch * 100, 1),
+                            }
+                except (ValueError, TypeError):
+                    pass
+
+            # GSTR-1 vs GSTR-3B turnover mismatch
+            gstr1_turnover = gst.get("gstr1_turnover_crores")
+            gstr3b_turnover = gst.get("gstr3b_turnover_crores")
+            if gstr1_turnover is not None and gstr3b_turnover is not None:
+                try:
+                    gstr1_turnover = float(gstr1_turnover)
+                    gstr3b_turnover = float(gstr3b_turnover)
+                    if gstr3b_turnover > 0:
+                        turnover_mismatch = abs(gstr1_turnover - gstr3b_turnover) / gstr3b_turnover
+                        if turnover_mismatch > 0.15:
+                            flags.append({
+                                "type":        "REVENUE_MISMATCH",
+                                "severity":    "HIGH" if turnover_mismatch > 0.25 else "MEDIUM",
+                                "description": f"GSTR-1 turnover ({gstr1_turnover:.0f} Cr) vs GSTR-3B turnover ({gstr3b_turnover:.0f} Cr) — {turnover_mismatch*100:.1f}% variance. Revenue inflation signal.",
+                            })
+                except (ValueError, TypeError):
+                    pass
 
         # AI-powered deep cross-reference
         ai_flags = self._ai_cross_reference()

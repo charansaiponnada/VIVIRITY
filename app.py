@@ -77,6 +77,13 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### INTELLI-CREDIT\n*by DOMINIX*")
     st.markdown("---")
+    a2a_mode = st.toggle("A2A Protocol Mode", value=False,
+                          help="Enable Google A2A protocol server for agent-to-agent communication")
+    if a2a_mode:
+        st.success("A2A Protocol: Active")
+        st.caption("POST http://localhost:5000/a2a")
+        st.caption("Agent Card: /.well-known/agent.json")
+    st.markdown("---")
     st.markdown("**AGENT PIPELINE**")
     agent_placeholders = {k: st.empty() for k in [
         "Doc Classifier", "Data Ingestor", "Cross-Reference",
@@ -97,8 +104,8 @@ with col_l:
     st.markdown('<div class="section-header">01 / UPLOAD DOCUMENTS</div>', unsafe_allow_html=True)
     uploaded_files = st.file_uploader(
         "Upload all available documents for the company",
-        type=["pdf"], accept_multiple_files=True,
-        help="Annual Reports, GST Returns, Bank Statements, Legal Notices, Rating Reports",
+        type=["pdf", "json", "csv"], accept_multiple_files=True,
+        help="Annual Reports (PDF), GST Returns (PDF/JSON), Bank Statements (PDF/CSV), Legal Notices, Rating Reports",
     )
     if uploaded_files:
         st.caption(f"✅ {len(uploaded_files)} file(s) uploaded")
@@ -110,8 +117,8 @@ with col_r:
     company_name = st.text_input("Company Name *", placeholder="e.g. Tata Motors Limited")
     promoters    = st.text_input("Promoter Names", placeholder="e.g. N. Chandrasekaran")
     sector       = st.selectbox("Industry Sector", [
-        "Manufacturing","Automobile","NBFC / Financial Services",
-        "Infrastructure","Real Estate","FMCG","Pharma",
+        "Manufacturing","Automobile","Banking","NBFC / Financial Services",
+        "Insurance","Infrastructure","Real Estate","FMCG","Pharma",
         "Textile","Steel / Metals","IT / Technology","Other",
     ])
     loan_amount  = st.text_input("Requested Loan Amount (₹ Crores)", placeholder="e.g. 500")
@@ -158,12 +165,26 @@ if run_btn:
             temp_paths.append(p)
 
     # ── Ingestor ─────────────────────────────────────────────────────────── #
+    try:
+        from utils.indian_context import detect_entity_type
+        pre_entity_type = detect_entity_type(
+            company_name=company_name,
+            cin="",
+            sector_input=sector,
+        )
+    except Exception:
+        pre_entity_type = "corporate"
+
     set_agent("Doc Classifier", "running"); set_agent("Data Ingestor", "running")
     financials = {}
     if temp_paths:
         try:
             from agents.ingestor_agent import IngestorAgent
-            financials = IngestorAgent(file_paths=temp_paths, log_callback=log).run()
+            financials = IngestorAgent(
+                file_paths=temp_paths,
+                log_callback=log,
+                entity_type=pre_entity_type,
+            ).run()
             set_agent("Doc Classifier", "done"); set_agent("Data Ingestor", "done")
         except Exception as e:
             log(f"Ingestor error: {e}", "error")
@@ -174,6 +195,22 @@ if run_btn:
 
     primary_fin = financials.get("annual_report") or \
                   (financials.get(list(financials.keys())[0]) if financials else {})
+
+    # ── Entity Type Detection (bank / nbfc / insurance / corporate) ───── #
+    try:
+        from utils.indian_context import detect_entity_type
+        entity_type = detect_entity_type(
+            company_name=company_name,
+            cin=primary_fin.get("cin", "") if isinstance(primary_fin, dict) else "",
+            sector_input=sector,
+        )
+        if isinstance(primary_fin, dict):
+            primary_fin["_entity_type"] = entity_type
+        log(f"Entity type detected: {entity_type.upper()}", "success")
+    except Exception as e:
+        entity_type = "corporate"
+        log(f"Entity detection fallback to CORPORATE: {e}", "warning")
+
     st.session_state["financials"] = primary_fin
 
     # ── Cross-reference ───────────────────────────────────────────────────── #
@@ -221,6 +258,8 @@ if run_btn:
             financials=primary_fin,
             research=research,
             manual_notes=manual_notes,
+            loan_purpose=loan_purpose,
+            entity_type=entity_type,
         )
         scoring_results = sa.run()
         st.session_state["scoring_results"]   = scoring_results
@@ -361,9 +400,14 @@ if st.session_state.get("analysis_done"):
     banner_cls = {
         "APPROVE":             "decision-approve",
         "CONDITIONAL_APPROVE": "decision-conditional",
+        "REJECT":              "decision-reject",
         "CANNOT_ASSESS":       "decision-reject",
     }.get(decision, "decision-reject")
     st.markdown(f'<div class="{banner_cls}">DECISION: {decision}</div>', unsafe_allow_html=True)
+
+    if decision == "REJECT":
+        rejection_reason = rec.get("rejection_reason") or rec.get("decision_rationale") or "Credit score below minimum threshold."
+        st.error(f"**LOAN APPLICATION REJECTED** — {rejection_reason}")
     st.markdown("")
 
     c1,c2,c3,c4,c5 = st.columns(5)
@@ -399,31 +443,79 @@ if st.session_state.get("analysis_done"):
 
     st.markdown("")
 
-    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10 = st.tabs([
+        "📊 Command Center", "🛡️ Risk Intelligence", "💰 Financial Health",
         "🏢 Company & Financials","🔗 Cross-Reference",
         "🔍 Research Intelligence","⚠️ Risk Signals",
-        "📝 Decision Rationale", "🤖 ML Intelligence",
+        "📝 Decision Rationale", "🤖 ML Intelligence", "🔌 A2A Protocol",
     ])
 
+    # ── Dashboard 1: Credit Risk Command Center ──────────────────────── #
     with tab1:
+        try:
+            from dashboards import render_credit_command_center
+            render_credit_command_center(sr, ml_results, fin, cname)
+        except Exception as e:
+            st.error(f"Dashboard error: {e}")
+
+    # ── Dashboard 2: Risk Intelligence Monitor ───────────────────────── #
+    with tab2:
+        try:
+            from dashboards import render_risk_intelligence
+            render_risk_intelligence(sr, research, xref, cname)
+        except Exception as e:
+            st.error(f"Dashboard error: {e}")
+
+    # ── Dashboard 3: Financial Health Analyzer ───────────────────────── #
+    with tab3:
+        try:
+            from dashboards import render_financial_health
+            render_financial_health(fin, sr, cname)
+        except Exception as e:
+            st.error(f"Dashboard error: {e}")
+
+    with tab4:
+        entity_type = fin.get("_entity_type", "corporate")
         a,b = st.columns(2)
         with a:
             st.markdown("**Company Info**")
             st.write(f"**Name:** {fin.get('company_name', cname)}")
             st.write(f"**CIN:** {fin.get('cin','N/A')}")
-            dirs = fin.get("directors",[]) or []
+            st.write(f"**Entity Type:** {str(entity_type).upper()}")
+            try:
+                from utils.indian_context import deduplicate_persons
+                dirs = deduplicate_persons(fin.get("directors",[]) or [])
+                promoters_view = deduplicate_persons(fin.get("promoters",[]) or [])
+            except Exception:
+                dirs = fin.get("directors",[]) or []
+                promoters_view = fin.get("promoters",[]) or []
             dirs_str = ", ".join([d.get("name",str(d)) if isinstance(d,dict) else str(d) for d in dirs]) or "N/A"
             st.write(f"**Directors:** {dirs_str}")
+            promoters_str = ", ".join([p.get("name",str(p)) if isinstance(p,dict) else str(p) for p in promoters_view]) or "N/A"
+            st.write(f"**Promoters:** {promoters_str}")
         with b:
             st.markdown("**Key Financials**")
-            st.write(f"**Revenue:** {fmt_cr(fin.get('revenue_crores'))}")
+            revenue_label = "Total Income" if entity_type in ("bank", "nbfc") else "Gross Premium" if entity_type == "insurance" else "Revenue"
+            st.write(f"**{revenue_label}:** {fmt_cr(fin.get('revenue_crores'))}")
             st.write(f"**PAT:** {fmt_cr(fin.get('profit_after_tax_crores'))}")
-            st.write(f"**EBITDA:** {fmt_cr(fin.get('ebitda_crores'))}")
-            st.write(f"**D/E Ratio:** {fmt_val(fin.get('debt_equity_ratio'), 'x')}")
-            st.write(f"**Net Worth:** {fmt_cr(fin.get('net_worth_crores'))}")
-            st.write(f"**Current Ratio:** {fmt_val(fin.get('current_ratio'), 'x')}")
 
-    with tab2:
+            if entity_type in ("bank", "nbfc"):
+                st.write(f"**NII:** {fmt_cr(fin.get('net_interest_income_crores'))}")
+                st.write(f"**NIM:** {fmt_val(fin.get('net_interest_margin_percent'), '%')}")
+                st.write(f"**Gross NPA:** {fmt_val(fin.get('gross_npa_percent'), '%')}")
+                st.write(f"**Capital Adequacy:** {fmt_val(fin.get('capital_adequacy_ratio_percent'), '%')}")
+            elif entity_type == "insurance":
+                st.write(f"**Solvency Ratio:** {fmt_val(fin.get('solvency_ratio'), 'x')}")
+                st.write(f"**Claims Ratio:** {fmt_val(fin.get('claims_ratio_percent'), '%')}")
+                st.write(f"**Combined Ratio:** {fmt_val(fin.get('combined_ratio_percent'), '%')}")
+            else:
+                st.write(f"**EBITDA:** {fmt_cr(fin.get('ebitda_crores'))}")
+                st.write(f"**D/E Ratio:** {fmt_val(fin.get('debt_equity_ratio'), 'x')}")
+                st.write(f"**Current Ratio:** {fmt_val(fin.get('current_ratio'), 'x')}")
+
+            st.write(f"**Net Worth:** {fmt_cr(fin.get('net_worth_crores'))}")
+
+    with tab5:
         if xref.get("cross_reference_performed"):
             st.success(f"✅ Compared: {', '.join(xref.get('documents_compared',[]))}")
             st.write(f"**Circular Trading Risk:** {xref.get('circular_trading_risk','N/A')}")
@@ -436,7 +528,7 @@ if st.session_state.get("analysis_done"):
         else:
             st.info(xref.get("reason","Cross-reference not performed."))
 
-    with tab3:
+    with tab6:
         if research:
             ov = research.get("overall_sentiment",{})
             if ov:
@@ -454,7 +546,7 @@ if st.session_state.get("analysis_done"):
         else:
             st.info("No research data.")
 
-    with tab4:
+    with tab7:
         risks = research.get("overall_sentiment",{}).get("top_risks",[])
         for r in risks: st.warning(f"⚠ {r}")
         rf = fin.get("red_flags",{})
@@ -465,7 +557,7 @@ if st.session_state.get("analysis_done"):
         if not risks and not any((rf or {}).values()):
             st.success("No major risk signals detected.")
 
-    with tab5:
+    with tab8:
         rationale = rec.get("decision_rationale") or rec.get("rejection_reason") or "N/A"
         st.write(f"**Decision:** `{decision}`")
         st.write(f"**Rationale:** {rationale}")
@@ -479,7 +571,7 @@ if st.session_state.get("analysis_done"):
             st.write(f"• **{c_key.title()}**: {c_data.get('score',0)} × {c_data.get('weight',0):.0%} = {c_data.get('contribution',0):.1f} pts")
         st.write(f"Weighted: {risk_score.get('weighted_score',0)} — Penalty: -{risk_score.get('penalty_applied',0)} — **Final: {risk_score.get('final_score',0)}/100**")
 
-    with tab6:
+    with tab9:
         st.markdown("### 🤖 ML-Based Credit Recommendation")
         st.caption("Logistic regression model calibrated on RBI IRAC norms + CRISIL rating migration matrix 2023")
 
@@ -518,6 +610,39 @@ if st.session_state.get("analysis_done"):
                 st.write(f"{icon} `{entry.get('timestamp','')[:19]}` **{entry.get('operation','')}** → {entry.get('doc_type','')} | {entry.get('notes','')}")
         else:
             st.info("Databricks audit trail not available. Run analysis to populate.")
+
+    with tab10:
+        st.markdown("### 🔌 Google A2A Protocol")
+        st.caption("Agent-to-Agent open protocol for inter-agent communication (google.github.io/A2A)")
+
+        st.markdown("**Agent Cards** — Each agent exposes a discoverable card at `/.well-known/agent.json`:")
+        try:
+            from a2a.agent_cards import AGENT_CARDS, get_orchestrator_card
+            orch_card = get_orchestrator_card()
+            st.write(f"**Orchestrator:** {orch_card.name}")
+            st.write(f"*{orch_card.description}*")
+            st.markdown("---")
+            for name, card in AGENT_CARDS.items():
+                with st.expander(f"🤖 {card.name}"):
+                    st.write(f"**URL:** `{card.url}`")
+                    st.write(f"**Description:** {card.description}")
+                    for skill in card.skills:
+                        st.write(f"  - **{skill.name}**: {skill.description}")
+        except Exception as e:
+            st.error(f"A2A module not available: {e}")
+
+        st.markdown("---")
+        st.markdown("**Task Lifecycle:** `submitted` → `working` → `completed` / `failed`")
+        st.markdown("**Protocol:** JSON-RPC 2.0 over HTTP with SSE streaming support")
+        st.code(
+            '# Example: Send a task to the orchestrator\n'
+            'curl -X POST http://localhost:5000/a2a \\\n'
+            '  -H "Content-Type: application/json" \\\n'
+            '  -d \'{"jsonrpc":"2.0","method":"tasks/send","id":"1",\n'
+            '       "params":{"message":{"role":"user","parts":[{"type":"text","text":"Analyze Tata Motors"}]},\n'
+            '       "metadata":{"company_name":"Tata Motors","sector":"Automobile"}}}\'',
+            language="bash"
+        )
 
     # ── Re-score ─────────────────────────────────────────────────────────── #
     st.markdown("---")

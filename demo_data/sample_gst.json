@@ -1,0 +1,20 @@
+{
+    "gstin": "27AABCT1332L1ZH",
+    "company_name": "TechVista Solutions Pvt Ltd",
+    "filing_period": "FY 2024-25",
+    "gst_turnover_crores": 485.0,
+    "gstr1_turnover_crores": 512.0,
+    "gstr3b_turnover_crores": 485.0,
+    "gstr3b_tax_liability_crores": 87.3,
+    "gstr2a_itc_crores": 52.1,
+    "gstr3b_itc_claimed_crores": 68.5,
+    "itc_mismatch_percent": 31.5,
+    "turnover_mismatch_percent": 5.6,
+    "circular_trading_risk": "Medium",
+    "gst_notices": ["Show cause notice dated 15-Jan-2025 for ITC mismatch of Rs 16.4 Cr"],
+    "revenue_crores": 485.0,
+    "red_flags": {
+        "itc_mismatch": true,
+        "show_cause_notice": true
+    }
+}

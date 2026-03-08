@@ -7,6 +7,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from utils.indian_context import deduplicate_persons, get_cam_financial_rows
 
 
 def _set_cell_bg(cell, hex_color: str):
@@ -203,15 +204,16 @@ class CAMGenerator:
     def _add_company_background(self, doc, financials: dict, company_name: str):
         self._section_heading(doc, "COMPANY BACKGROUND")
         basic = financials if isinstance(financials, dict) else {}
+        entity_type = basic.get("_entity_type", "corporate")
 
         # Handle directors as list of dicts OR list of strings
-        directors_raw = basic.get("directors", []) or []
+        directors_raw = deduplicate_persons(basic.get("directors", []) or [])
         directors_str = ", ".join([
             d.get("name", str(d)) if isinstance(d, dict) else str(d)
             for d in directors_raw
         ]) or "Not extracted"
 
-        promoters_raw = basic.get("promoters", []) or []
+        promoters_raw = deduplicate_persons(basic.get("promoters", []) or [])
         promoters_str = ", ".join([
             p.get("name", str(p)) if isinstance(p, dict) else str(p)
             for p in promoters_raw
@@ -220,6 +222,7 @@ class CAMGenerator:
         rows = [
             ("Company Name",     basic.get("company_name", company_name) or company_name),
             ("CIN",              basic.get("cin",          "Not extracted")),
+            ("Entity Type",      str(entity_type).upper()),
             ("Directors",        directors_str),
             ("Promoters",        promoters_str),
             ("Extraction Notes", basic.get("extraction_notes", "—")),
@@ -243,6 +246,7 @@ class CAMGenerator:
         self._section_heading(doc, "FINANCIAL ANALYSIS")
 
         f = financials if isinstance(financials, dict) else {}
+        entity_type = f.get("_entity_type", "corporate")
 
         def fmt(val, suffix="Cr"):
             if val is None or val == "":
@@ -262,20 +266,18 @@ class CAMGenerator:
             try: return f"{float(val):.2f}x"
             except Exception: return str(val)
 
-        rows = [
-            ("Revenue",            fmt(f.get("revenue_crores"))),
-            ("Revenue Growth",     fmt_pct(f.get("revenue_growth_percent"))),
-            ("Profit After Tax",   fmt(f.get("profit_after_tax_crores"))),
-            ("EBITDA",             fmt(f.get("ebitda_crores"))),
-            ("EBITDA Margin",      fmt_pct(f.get("ebitda_margin_percent"))),
-            ("Total Assets",       fmt(f.get("total_assets_crores"))),
-            ("Net Worth",          fmt(f.get("net_worth_crores"))),
-            ("Total Borrowings",   fmt(f.get("total_borrowings_crores"))),
-            ("Debt / Equity",      fmt_ratio(f.get("debt_equity_ratio"))),
-            ("Current Ratio",      fmt_ratio(f.get("current_ratio"))),
-            ("Interest Coverage",  fmt_ratio(f.get("interest_coverage_ratio"))),
-            ("Return on Equity",   fmt_pct(f.get("return_on_equity_percent"))),
-        ]
+        rows = []
+        for label, key, fmt_type in get_cam_financial_rows(entity_type):
+            val = f.get(key)
+            if fmt_type == "cr":
+                display_val = fmt(val)
+            elif fmt_type == "pct":
+                display_val = fmt_pct(val)
+            elif fmt_type == "ratio":
+                display_val = fmt_ratio(val)
+            else:
+                display_val = str(val) if val is not None else "N/A"
+            rows.append((label, display_val))
 
         table = doc.add_table(rows=len(rows) + 1, cols=2)
         table.style = "Table Grid"

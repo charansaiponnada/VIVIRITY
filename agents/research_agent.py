@@ -55,6 +55,20 @@ class ResearchAgent:
     - Promoter background
     - RBI/SEBI regulatory actions
     - CRISIL/ICRA/CARE credit ratings
+
+    Data sourcing approach:
+      This agent uses Tavily web search to gather public intelligence across all domains.
+      Direct API access to MCA21, e-Courts (ecourts.gov.in), and CIBIL is not available
+      in this hackathon environment because:
+        - MCA21 has no public API (only paid data vendors like Tofler/Zaubacorp)
+        - e-Courts requires captcha-based manual lookup
+        - CIBIL Commercial reports require institutional access agreements
+      Instead, we search the public web for the same signals (e.g., "NCLT order" via
+      news articles, "director DIN disqualification" via MCA press releases, etc.).
+      In a production deployment, integrate with:
+        - MCA21 V3 API (via registered information utility)
+        - NCLAT/NCLT order database (paid legal tech providers like Manupatra/SCC)
+        - CIBIL Commercial Bureau API (institutional subscriber access)
     """
 
     def __init__(self, company_name: str, sector: str = "", promoters: str = ""):

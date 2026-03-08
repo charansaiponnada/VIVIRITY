@@ -1,0 +1,60 @@
+{
+  "record_id": "f481318222ee",
+  "company_name": "YES BANK Limited",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-08T16:47:45.889453",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.44,
+  "cin": "L65190MH2003PLC143249",
+  "directors": [
+    "Rama Subramaniam Gandhi (Chairman)",
+    "Managing Director & CEO",
+    "Dr. Rajan Pental (Executive Director)",
+    "Mr. Manish Jain (Executive Director)",
+    {
+      "name": "Rama Subramaniam Gandhi",
+      "designation": "Chairman"
+    },
+    {
+      "name": "Dr. Rajan Pental",
+      "designation": "Executive Director"
+    },
+    {
+      "name": "Mr. Manish Jain",
+      "designation": "Executive Director"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": "2024-25",
+  "revenue_crores": 14801,
+  "interest_earned_crores": null,
+  "interest_expended_crores": null,
+  "net_interest_income_crores": null,
+  "other_income_crores": null,
+  "operating_expenses_crores": null,
+  "provisions_crores": null,
+  "profit_before_tax_crores": null,
+  "profit_after_tax_crores": 2406,
+  "operating_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": true,
+    "related_party_concerns": false,
+    "rbi_directions": false
+  },
+  "extraction_notes": "Total Net Income of \u20b9 14,801 Cr is taken as Revenue (Total Income) as per the prompt's definition (Interest Earned + Other Income), given its magnitude and context in the 'Key Highlights'. No separate Interest Earned, Interest Expended, or Other Income figures were provided in the snippets. Net Non-Performing Assets (NPA) ratio declining to 0.3% is mentioned, leading to the 'npa_mention' flag.",
+  "total_assets_crores": 423422.0,
+  "total_deposits_crores": 284525.0,
+  "total_advances_crores": 246188.0,
+  "total_borrowings_crores": 71603.0,
+  "net_npa_percent": 0.3,
+  "capital_adequacy_ratio_percent": 15.6,
+  "provision_coverage_ratio_percent": 80.0,
+  "casa_ratio_percent": 34.3,
+  "return_on_assets_percent": 0.6,
+  "extraction_method": "VectorLess RAG \u2014 Banking split extraction (bank)",
+  "_entity_type": "bank"
+}

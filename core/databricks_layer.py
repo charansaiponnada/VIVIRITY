@@ -108,6 +108,23 @@ SCHEMAS = {
             "recommended_amount_crores":    "DOUBLE",
             "scoring_timestamp":            "TIMESTAMP",
         }
+    },
+    "cibil_report": {
+        "table_name":   "intellicredit.bronze.cibil_reports",
+        "description":  "CIBIL/Credit Bureau data — Bronze layer",
+        "fields": {
+            "record_id":                "STRING NOT NULL",
+            "company_name":             "STRING",
+            "credit_score":             "INTEGER",
+            "max_dpd":                  "INTEGER",
+            "total_outstanding_crores": "DOUBLE",
+            "suit_filed":               "BOOLEAN",
+            "wilful_defaulter":         "BOOLEAN",
+            "overdue_amount_crores":    "DOUBLE",
+            "total_credit_facilities":  "INTEGER",
+            "active_facilities":        "INTEGER",
+            "filing_timestamp":         "TIMESTAMP",
+        }
     }
 }
 

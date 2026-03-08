@@ -8,12 +8,14 @@ Fixes applied:
 import os
 import re
 import json
+import csv
 import time
 import pdfplumber
 from google import genai
 from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
 from agents.document_classifier import DocumentClassifier
+from utils.indian_context import deduplicate_persons
 
 load_dotenv()
 
@@ -70,13 +72,32 @@ SECTION_QUERIES = {
 
 PRIORITY_SECTIONS = ["ebitda","balance_sheet","current_items","net_worth","debt","cash_flow","ratios","notes","shareholding"]
 
+# Banking-specific section queries — banks have different financial structure
+BANKING_SECTION_QUERIES = {
+    "identity":      ["company name","cin","directors","promoter","board of directors","corporate governance","chairman","managing director","shareholding pattern"],
+    "income":        ["interest earned","interest income","interest expended","net interest income","other income","total income","non-interest income","fee income","commission"],
+    "profit":        ["profit after tax","pat","profit before tax","net profit","profit for the year","operating profit"],
+    "npa":           ["gross npa","net npa","non-performing","asset quality","provision coverage","slippage","recovery","write-off","npa movement"],
+    "capital":       ["capital adequacy","crar","tier 1","tier 2","risk weighted assets","basel","capital ratios","common equity"],
+    "deposits":      ["deposits","casa","demand deposits","savings deposits","term deposits","time deposits","current account","total deposits"],
+    "advances":      ["advances","loan book","credit portfolio","gross advances","net advances","retail loans","corporate loans","priority sector"],
+    "balance_sheet": ["total assets","total liabilities","investments","net worth","equity","reserves and surplus","shareholders funds"],
+    "ratios":        ["net interest margin","cost to income","return on assets","return on equity","key ratios","financial ratios","efficiency ratio","yield on advances","cost of deposits"],
+    "compliance":    ["auditor","audit report","going concern","qualification","emphasis of matter","rbi directions","rbi inspection"],
+    "notes":         ["notes to financial","significant accounting","related party","contingent liabilities","schedule"],
+    "shareholding":  ["promoter and promoter group","public shareholding","pattern of shareholding","institutional"],
+}
+
+BANKING_PRIORITY_SECTIONS = ["npa","capital","deposits","advances","balance_sheet","ratios","income","notes","shareholding"]
+
 
 class IngestorAgent:
-    def __init__(self, file_paths: list[str], log_callback=None):
+    def __init__(self, file_paths: list[str], log_callback=None, entity_type: str = "corporate"):
         self.file_paths = file_paths
         self.log        = log_callback or print
         self.model      = "gemini-2.5-flash"
         self.client     = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self._entity_type = entity_type
 
     # ------------------------------------------------------------------ #
     def run(self) -> dict:
@@ -88,6 +109,22 @@ class IngestorAgent:
             self.log(f"Parsing: {filename}")
 
             try:
+                ext = os.path.splitext(filename)[1].lower()
+
+                # Handle structured files (JSON/CSV) for GST and bank statements
+                if ext == ".json":
+                    data = self._ingest_json(path)
+                    doc_type = data.pop("_doc_type", "gst_filing")
+                    results[doc_type] = data
+                    self.log(f"→ Ingested structured JSON as {doc_type.upper().replace('_',' ')}")
+                    continue
+                elif ext == ".csv":
+                    data = self._ingest_csv(path)
+                    doc_type = data.pop("_doc_type", "bank_statement")
+                    results[doc_type] = data
+                    self.log(f"→ Ingested structured CSV as {doc_type.upper().replace('_',' ')}")
+                    continue
+
                 with pdfplumber.open(path) as pdf:
                     page_count = len(pdf.pages)
                     classifier = DocumentClassifier(pdf)
@@ -95,6 +132,7 @@ class IngestorAgent:
                     self.log(f"→ Classified as: {doc_type.upper().replace('_',' ')} ({page_count} pages, targeted up to {min(PAGE_BUDGET, page_count)} pages)")
 
                     extracted = self._extract(pdf, path, doc_type, page_count)
+                    extracted["_entity_type"] = self._entity_type
                     extracted = self._compute_ratios(extracted)
 
                     # FIX #5: CIN regex pass on first 3 pages if still missing
@@ -112,6 +150,105 @@ class IngestorAgent:
         return results
 
     # ------------------------------------------------------------------ #
+    def _ingest_json(self, path: str) -> dict:
+        """Ingest structured JSON file (GST filings, CIBIL reports, etc.)."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Detect document type from content
+        keys_lower = {k.lower() for k in data.keys()}
+        if any(k in keys_lower for k in ["gstin", "gstr", "gst_turnover", "gstr3b", "gstr1"]):
+            doc_type = "gst_filing"
+            # Normalize revenue field for cross-reference
+            if not data.get("revenue_crores"):
+                data["revenue_crores"] = (
+                    data.get("gst_turnover_crores") or
+                    data.get("gstr3b_turnover_crores") or
+                    data.get("gstr1_turnover_crores")
+                )
+        elif any(k in keys_lower for k in ["cibil", "credit_score", "dpd", "suit_filed"]):
+            doc_type = "cibil_report"
+            # Derive CIBIL red flags for penalty engine
+            cibil_flags = {}
+            cibil_score = data.get("credit_score") or data.get("cibil_score") or 0
+            try:
+                cibil_score = int(cibil_score)
+            except (ValueError, TypeError):
+                cibil_score = 0
+            if cibil_score and cibil_score < 650:
+                cibil_flags["low_cibil_score"] = True
+            max_dpd = data.get("max_dpd") or data.get("dpd_90_plus") or 0
+            try:
+                max_dpd = int(max_dpd)
+            except (ValueError, TypeError):
+                max_dpd = 0
+            if max_dpd >= 90:
+                cibil_flags["dpd_90_plus"] = True
+            if data.get("suit_filed") or data.get("suit_filed_status"):
+                cibil_flags["suit_filed"] = True
+            if data.get("wilful_defaulter") or data.get("wilful_default"):
+                cibil_flags["wilful_default_cibil"] = True
+            data["red_flags"] = {**data.get("red_flags", {}), **cibil_flags}
+            data["cibil_score"] = cibil_score
+            data["max_dpd"] = max_dpd
+        else:
+            doc_type = "gst_filing"  # default for JSON
+
+        data["_doc_type"] = doc_type
+        data["red_flags"] = data.get("red_flags", {})
+        return data
+
+    # ------------------------------------------------------------------ #
+    def _ingest_csv(self, path: str) -> dict:
+        """Ingest structured CSV file (bank statements)."""
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        if not rows:
+            return {"_doc_type": "bank_statement", "red_flags": {}}
+
+        # Compute summary statistics from transaction rows
+        total_credits = 0.0
+        total_debits = 0.0
+        bounce_count = 0
+        balances = []
+
+        for row in rows:
+            credit = float(row.get("credit", 0) or row.get("Credit", 0) or 0)
+            debit = float(row.get("debit", 0) or row.get("Debit", 0) or 0)
+            balance = float(row.get("balance", 0) or row.get("Balance", 0) or 0)
+            narration = (row.get("narration", "") or row.get("Narration", "") or "").lower()
+
+            total_credits += credit
+            total_debits += debit
+            if balance:
+                balances.append(balance)
+            if "bounce" in narration or "return" in narration or "dishonour" in narration:
+                bounce_count += 1
+
+        avg_balance = sum(balances) / len(balances) if balances else 0
+        # Convert to crores (assume amounts in the CSV are in INR)
+        CRORE = 10_000_000
+        total_credits_cr = total_credits / CRORE if total_credits > CRORE else total_credits
+        total_debits_cr = total_debits / CRORE if total_debits > CRORE else total_debits
+        avg_balance_cr = avg_balance / CRORE if avg_balance > CRORE else avg_balance
+
+        return {
+            "_doc_type": "bank_statement",
+            "account_number": rows[0].get("account_number") or rows[0].get("Account") or None,
+            "bank_name": rows[0].get("bank_name") or rows[0].get("Bank") or None,
+            "period": f"{rows[0].get('date', 'N/A')} to {rows[-1].get('date', 'N/A')}",
+            "total_credits_crores": round(total_credits_cr, 2),
+            "total_debits_crores": round(total_debits_cr, 2),
+            "average_monthly_balance_crores": round(avg_balance_cr, 2),
+            "bounce_count": bounce_count,
+            "transaction_count": len(rows),
+            "revenue_crores": round(total_credits_cr, 2),
+            "red_flags": {},
+        }
+
+    # ------------------------------------------------------------------ #
     def _extract(self, pdf, path: str, doc_type: str, page_count: int) -> dict:
         if doc_type == "annual_report":
             return self._extract_annual_report(pdf, path, page_count)
@@ -119,6 +256,8 @@ class IngestorAgent:
             return self._extract_gst(pdf)
         elif doc_type == "bank_statement":
             return self._extract_bank_statement(pdf)
+        elif doc_type == "rating_report":
+            return self._extract_rating_report(pdf)
         else:
             return self._extract_generic(pdf, doc_type)
 
@@ -126,21 +265,29 @@ class IngestorAgent:
     def _extract_annual_report(self, pdf, path: str, page_count: int) -> dict:
         import fitz
 
+        # Determine entity type from previously detected value or guess from text
+        entity_type = getattr(self, '_entity_type', 'corporate')
+
+        # Choose section queries based on entity type
+        is_financial = entity_type in ("bank", "nbfc", "insurance")
+        sq = BANKING_SECTION_QUERIES if is_financial else SECTION_QUERIES
+        prio = BANKING_PRIORITY_SECTIONS if is_financial else PRIORITY_SECTIONS
+
         # Phase 1: Fast scan ALL pages
-        section_ranges: dict[str, list[int]] = {s: [] for s in SECTION_QUERIES}
+        section_ranges: dict[str, list[int]] = {s: [] for s in sq}
         doc = fitz.open(path)
-        self.log(f"→ Pass 1: Scanning all {len(doc)} pages...")
+        self.log(f"→ Pass 1: Scanning all {len(doc)} pages (entity: {entity_type})...")
 
         for page_num in range(len(doc)):
             page_text = doc[page_num].get_text().lower()
-            for section, keywords in SECTION_QUERIES.items():
+            for section, keywords in sq.items():
                 if any(kw in page_text for kw in keywords):
                     section_ranges[section].append(page_num)
         doc.close()
 
         # Select pages — priority first
         selected_pages: set[int] = set()
-        for section in PRIORITY_SECTIONS:
+        for section in prio:
             for p in section_ranges.get(section, [])[:PAGES_PER_SECTION]:
                 selected_pages.add(p)
         for section, pages in section_ranges.items():
@@ -157,8 +304,12 @@ class IngestorAgent:
 
         # Split pages into income vs balance groups
         income_pages, balance_pages = [], []
-        income_secs  = {"revenue","profit","ebitda","cash_flow","identity","compliance"}
-        balance_secs = {"balance_sheet","current_items","net_worth","debt","ratios","notes"}
+        if is_financial:
+            income_secs  = {"income","profit","identity","compliance","ratios"}
+            balance_secs = {"npa","capital","deposits","advances","balance_sheet","notes"}
+        else:
+            income_secs  = {"revenue","profit","ebitda","cash_flow","identity","compliance"}
+            balance_secs = {"balance_sheet","current_items","net_worth","debt","ratios","notes"}
 
         for pn in targeted:
             in_i = any(pn in section_ranges.get(s,[]) for s in income_secs)
@@ -170,11 +321,17 @@ class IngestorAgent:
         balance_text, balance_tables = self._extract_pages(pdf, balance_pages[:65])
 
         self.log(f"→ Extracting income statement data (Gemini call 1/2)...")
-        income_data = self._ai_extract_income(income_text, income_tables)
+        if is_financial:
+            income_data = self._ai_extract_income_banking(income_text, income_tables, entity_type)
+        else:
+            income_data = self._ai_extract_income(income_text, income_tables)
         time.sleep(4)
 
         self.log(f"→ Extracting balance sheet data (Gemini call 2/2)...")
-        balance_data = self._ai_extract_balance(balance_text, balance_tables)
+        if is_financial:
+            balance_data = self._ai_extract_balance_banking(balance_text, balance_tables, entity_type)
+        else:
+            balance_data = self._ai_extract_balance(balance_text, balance_tables)
         time.sleep(4)
 
         # Merge
@@ -191,23 +348,18 @@ class IngestorAgent:
         # Merge directors
         d1 = income_data.get("directors", []) or []
         d2 = balance_data.get("directors", []) or []
-        seen, merged_dirs = set(), []
-        for d in d1 + d2:
+        merged_dirs = deduplicate_persons(d1 + d2)
+        seen = set()
+        for d in merged_dirs:
             k = (d.get("name", str(d)) if isinstance(d, dict) else str(d)).lower().strip()
-            if k not in seen and k:
+            if k:
                 seen.add(k)
-                merged_dirs.append(d)
         merged["directors"] = merged_dirs
 
         # Merge promoters
         p1 = income_data.get("promoters", []) or []
         p2 = balance_data.get("promoters", []) or []
-        seen_p, merged_prom = set(), []
-        for p in p1 + p2:
-            k = (p.get("name", str(p)) if isinstance(p, dict) else str(p)).lower().strip()
-            if k not in seen_p and k:
-                seen_p.add(k)
-                merged_prom.append(p)
+        merged_prom = deduplicate_persons(p1 + p2)
         if merged_prom:
             merged["promoters"] = merged_prom
 
@@ -233,10 +385,13 @@ class IngestorAgent:
                 self.log(f"→ Directors after retry: {len(merged_dirs)}")
 
         # FIX #3 PART 2: If critical fields still NULL, run targeted notes extraction
+        # Skip for banking entities — they don't have finance_cost/depreciation in the same sense
         missing_critical = (
-            merged.get("finance_cost_crores") is None or
-            merged.get("total_borrowings_crores") is None or
-            merged.get("depreciation_crores") is None
+            not is_financial and (
+                merged.get("finance_cost_crores") is None or
+                merged.get("total_borrowings_crores") is None or
+                merged.get("depreciation_crores") is None
+            )
         )
         if missing_critical and page_count > 100:
             self.log(f"→ Critical fields missing — scanning financial notes (pages 150-350)...")
@@ -470,6 +625,135 @@ Return ONLY valid JSON. No markdown. No thinking tokens. null for missing.
             return {"red_flags": {}}
 
     # ------------------------------------------------------------------ #
+    def _ai_extract_income_banking(self, text: str, tables_str: str, entity_type: str) -> dict:
+        """Banking / NBFC / Insurance income statement extraction."""
+        entity_label = {"bank": "SCHEDULED COMMERCIAL BANK", "nbfc": "NBFC", "insurance": "INSURANCE COMPANY"}.get(entity_type, "FINANCIAL INSTITUTION")
+        prompt = f"""
+You are extracting financial data from an Indian {entity_label} annual report.
+This is NOT a manufacturing/corporate company. Interest income IS the core business.
+
+CRITICAL RULES:
+- Numbers in CRORES (₹ Cr). If in lakhs, divide by 100. Prefer CONSOLIDATED.
+- "Revenue" for a bank = Total Income = Interest Earned + Other Income.
+- DO NOT compute EBITDA — it is meaningless for banks/NBFCs.
+- Net Interest Income = Interest Earned − Interest Expended.
+- Net Interest Margin = NII / Average Interest-Earning Assets × 100.
+- For insurance: Revenue = Gross Written Premium.
+- Extract ALL directors and promoters.
+
+Text:
+{text}
+
+Tables:
+{tables_str}
+
+Return ONLY valid JSON. No markdown. No thinking tokens. null for missing values.
+{{
+    "company_name": null,
+    "cin": null,
+    "directors": [],
+    "promoters": [],
+    "fiscal_year": null,
+    "revenue_crores": null,
+    "interest_earned_crores": null,
+    "interest_expended_crores": null,
+    "net_interest_income_crores": null,
+    "other_income_crores": null,
+    "operating_expenses_crores": null,
+    "provisions_crores": null,
+    "profit_before_tax_crores": null,
+    "profit_after_tax_crores": null,
+    "operating_cash_flow_crores": null,
+    "external_credit_rating": null,
+    "red_flags": {{
+        "audit_qualified": false,
+        "going_concern_issue": false,
+        "npa_mention": false,
+        "related_party_concerns": false,
+        "rbi_directions": false
+    }},
+    "extraction_notes": ""
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            return result if not result.get("parse_error") else {"red_flags": {}}
+        except Exception as e:
+            print(f"[Ingestor] Banking income extraction error: {e}")
+            return {"red_flags": {}}
+
+    # ------------------------------------------------------------------ #
+    def _ai_extract_balance_banking(self, text: str, tables_str: str, entity_type: str) -> dict:
+        """Banking / NBFC / Insurance balance sheet + asset quality extraction."""
+        entity_label = {"bank": "SCHEDULED COMMERCIAL BANK", "nbfc": "NBFC", "insurance": "INSURANCE COMPANY"}.get(entity_type, "FINANCIAL INSTITUTION")
+        prompt = f"""
+You are extracting balance sheet and asset quality data from an Indian {entity_label} annual report.
+This is NOT a manufacturing/corporate company.
+
+CRITICAL RULES:
+- Numbers in CRORES (₹ Cr). If in lakhs, divide by 100. Prefer CONSOLIDATED.
+- For banks: Deposits are LIABILITIES (borrowed from public). Advances are ASSETS (loans given).
+- Gross NPA % = Gross NPAs / Gross Advances × 100.
+- Capital Adequacy (CRAR) = (Tier 1 + Tier 2 Capital) / Risk Weighted Assets × 100. RBI minimum: 9% for banks, 15% for NBFCs.
+- Provision Coverage Ratio = Provisions held / Gross NPAs × 100.
+- Cost-to-Income = Operating Expenses / (NII + Other Income) × 100.
+- CASA Ratio = (Current Account + Savings Account Deposits) / Total Deposits × 100.
+- DO NOT extract "current_assets" or "current_liabilities" — these concepts don't apply to banks.
+- DO NOT compute Debt/Equity or ICR — not applicable for banks.
+- Extract ALL directors and promoters.
+
+Text:
+{text}
+
+Tables:
+{tables_str}
+
+Return ONLY valid JSON. No markdown. No thinking tokens. null for missing.
+{{
+    "directors": [],
+    "promoters": [],
+    "total_assets_crores": null,
+    "total_deposits_crores": null,
+    "total_advances_crores": null,
+    "total_investments_crores": null,
+    "net_worth_crores": null,
+    "share_capital_crores": null,
+    "reserves_crores": null,
+    "total_borrowings_crores": null,
+    "gross_npa_crores": null,
+    "gross_npa_percent": null,
+    "net_npa_crores": null,
+    "net_npa_percent": null,
+    "capital_adequacy_ratio_percent": null,
+    "tier1_capital_ratio_percent": null,
+    "provision_coverage_ratio_percent": null,
+    "cost_to_income_ratio_percent": null,
+    "casa_ratio_percent": null,
+    "net_interest_margin_percent": null,
+    "return_on_assets_percent": null,
+    "return_on_equity_percent": null,
+    "red_flags": {{
+        "audit_qualified": false,
+        "going_concern_issue": false,
+        "npa_mention": false,
+        "related_party_concerns": false,
+        "rbi_directions": false
+    }},
+    "extraction_notes": ""
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            return result if not result.get("parse_error") else {"red_flags": {}}
+        except Exception as e:
+            print(f"[Ingestor] Banking balance extraction error: {e}")
+            return {"red_flags": {}}
+
+    # ------------------------------------------------------------------ #
     def _extract_directors_targeted(self, text: str, tables_str: str) -> list:
         """
         FIX #4: Targeted director extraction when initial pass finds < 5.
@@ -587,11 +871,16 @@ Return ONLY a JSON array of director objects. No markdown.
     def _compute_ratios(self, data: dict) -> dict:
         """
         FIX #3: Compute all derivable ratios.
-        For finance_cost: if still NULL after extraction, estimate from
-        outstanding debt × assumed interest rate (fallback only).
+        Routes to banking-specific computation for bank/nbfc/insurance entities.
         """
         if not data or data.get("parse_error"):
             return data
+
+        entity_type = data.get("_entity_type") or getattr(self, '_entity_type', 'corporate')
+        if entity_type in ("bank", "nbfc", "insurance"):
+            return self._compute_ratios_banking(data, entity_type)
+
+        # ── Corporate ratio computation (original logic) ──────────────
 
         def sf(val):
             try: return float(val) if val is not None else None
@@ -765,21 +1054,252 @@ Return ONLY a JSON array of director objects. No markdown.
         return data
 
     # ------------------------------------------------------------------ #
+    def _compute_ratios_banking(self, data: dict, entity_type: str) -> dict:
+        """Compute derived ratios for banks, NBFCs, and insurance companies."""
+        def sf(val):
+            try: return float(val) if val is not None else None
+            except Exception: return None
+
+        rev     = sf(data.get("revenue_crores"))
+        pat     = sf(data.get("profit_after_tax_crores"))
+        nw      = sf(data.get("net_worth_crores"))
+        assets  = sf(data.get("total_assets_crores"))
+        nii     = sf(data.get("net_interest_income_crores"))
+        int_earned  = sf(data.get("interest_earned_crores"))
+        int_expended = sf(data.get("interest_expended_crores"))
+        gnpa_cr = sf(data.get("gross_npa_crores"))
+        advances = sf(data.get("total_advances_crores"))
+        deposits = sf(data.get("total_deposits_crores"))
+        opex    = sf(data.get("operating_expenses_crores"))
+        other_income = sf(data.get("other_income_crores"))
+
+        computed = []
+
+        # NII derivation
+        if nii is None and int_earned is not None and int_expended is not None:
+            nii = int_earned - int_expended
+            data["net_interest_income_crores"] = round(nii, 2)
+            computed.append(f"NII={nii:.0f}Cr")
+
+        # Total income
+        if rev is None and int_earned is not None:
+            oi = other_income or 0
+            rev = int_earned + oi
+            data["revenue_crores"] = round(rev, 2)
+            computed.append(f"TotalIncome={rev:.0f}Cr")
+
+        # NIM
+        if data.get("net_interest_margin_percent") is None and nii and assets and assets > 0:
+            nim = (nii / assets) * 100
+            data["net_interest_margin_percent"] = round(nim, 2)
+            computed.append(f"NIM={nim:.2f}%")
+
+        # GNPA %
+        if data.get("gross_npa_percent") is None and gnpa_cr is not None and advances and advances > 0:
+            gnpa_pct = (gnpa_cr / advances) * 100
+            data["gross_npa_percent"] = round(gnpa_pct, 2)
+            computed.append(f"GNPA={gnpa_pct:.2f}%")
+
+        # Cost-to-Income
+        if data.get("cost_to_income_ratio_percent") is None and opex and nii:
+            denom = nii + (other_income or 0)
+            if denom > 0:
+                cti = (opex / denom) * 100
+                data["cost_to_income_ratio_percent"] = round(cti, 2)
+                computed.append(f"CostToIncome={cti:.1f}%")
+
+        # ROA
+        if data.get("return_on_assets_percent") is None and pat is not None and assets and assets > 0:
+            roa = (pat / assets) * 100
+            data["return_on_assets_percent"] = round(roa, 2)
+            computed.append(f"ROA={roa:.2f}%")
+
+        # ROE
+        if data.get("return_on_equity_percent") is None and pat is not None and nw and nw > 0:
+            roe = (pat / nw) * 100
+            data["return_on_equity_percent"] = round(roe, 2)
+            computed.append(f"ROE={roe:.1f}%")
+
+        # For NBFCs: also compute D/E (meaningful for NBFCs, max 7x per RBI)
+        if entity_type == "nbfc":
+            debt = sf(data.get("total_borrowings_crores"))
+            if data.get("debt_equity_ratio") is None and debt is not None and nw and nw > 0:
+                de = debt / nw
+                data["debt_equity_ratio"] = round(de, 2)
+                computed.append(f"D/E={de:.2f}x")
+
+        if computed:
+            print(f"  [RatioEngine-Banking] Computed: {', '.join(computed)}")
+            data["ratios_computed"] = computed
+
+        # Banking sanity checks
+        gnpa = sf(data.get("gross_npa_percent"))
+        if gnpa is not None and gnpa > 50:
+            print(f"  [SanityCheck-Banking] GNPA {gnpa:.1f}% > 50% — likely extraction error. Nulling.")
+            data["gross_npa_percent"] = None
+
+        car = sf(data.get("capital_adequacy_ratio_percent"))
+        if car is not None and car > 50:
+            print(f"  [SanityCheck-Banking] CAR {car:.1f}% > 50% — likely extraction error. Nulling.")
+            data["capital_adequacy_ratio_percent"] = None
+
+        data["extraction_method"] = f"VectorLess RAG — Banking split extraction ({entity_type})"
+        return data
+
+    # ------------------------------------------------------------------ #
     def _extract_gst(self, pdf) -> dict:
+        """Extract GST filing data from PDF or structured JSON."""
         text = ""
         for page in pdf.pages[:20]:
             text += page.extract_text() or ""
-        result = self._ai_extract_income(text[:8000], "")
-        return self._compute_ratios(result)
+
+        prompt = f"""
+You are a senior credit analyst specializing in Indian GST analysis.
+Extract GST filing data from this document.
+
+CRITICAL DISTINCTIONS:
+- GSTR-1: Outward supply details filed by supplier (sales register)
+- GSTR-3B: Monthly summary return with tax payment
+- GSTR-2A: Auto-populated inward supply (purchase register)
+- Mismatch between GSTR-2A ITC and GSTR-3B ITC claimed = potential fake Input Tax Credit
+- Mismatch between GSTR-1 turnover and GSTR-3B turnover = revenue inflation signal
+
+Text:
+{text[:10000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "gstin": null,
+    "filing_period": null,
+    "gst_turnover_crores": null,
+    "gstr1_turnover_crores": null,
+    "gstr3b_turnover_crores": null,
+    "gstr3b_tax_liability_crores": null,
+    "gstr2a_itc_crores": null,
+    "gstr3b_itc_claimed_crores": null,
+    "itc_mismatch_percent": null,
+    "turnover_mismatch_percent": null,
+    "circular_trading_risk": "Low",
+    "gst_notices": [],
+    "revenue_crores": null,
+    "red_flags": {{}}
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            # Ensure revenue_crores is set for cross-reference
+            if not result.get("revenue_crores"):
+                result["revenue_crores"] = (
+                    result.get("gst_turnover_crores") or
+                    result.get("gstr3b_turnover_crores") or
+                    result.get("gstr1_turnover_crores")
+                )
+            return result
+        except Exception as e:
+            print(f"[Ingestor] GST extraction error: {e}")
+            return {"red_flags": {}}
 
     def _extract_bank_statement(self, pdf) -> dict:
+        """Extract bank statement data from PDF."""
         text, tables = "", []
         for page in pdf.pages[:30]:
             text += page.extract_text() or ""
             for t in (page.extract_tables() or []):
                 tables.append(t)
-        result = self._ai_extract_income(text[:8000], json.dumps(tables[:10])[:3000])
-        return self._compute_ratios(result)
+
+        prompt = f"""
+You are a senior credit analyst extracting bank statement data for credit appraisal.
+Extract transaction summary from this Indian bank statement.
+
+Text:
+{text[:10000]}
+
+Tables:
+{json.dumps(tables[:10])[:3000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "account_number": null,
+    "bank_name": null,
+    "period": null,
+    "total_credits_crores": null,
+    "total_debits_crores": null,
+    "average_monthly_balance_crores": null,
+    "peak_balance_crores": null,
+    "lowest_balance_crores": null,
+    "bounce_count": 0,
+    "emi_obligations_crores": null,
+    "cash_deposit_ratio_percent": null,
+    "revenue_crores": null,
+    "red_flags": {{}}
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            # Set revenue_crores from credits for cross-reference
+            if not result.get("revenue_crores") and result.get("total_credits_crores"):
+                result["revenue_crores"] = result["total_credits_crores"]
+            return result
+        except Exception as e:
+            print(f"[Ingestor] Bank statement extraction error: {e}")
+            return {"red_flags": {}}
+
+    # ------------------------------------------------------------------ #
+    # Rating report regex extractor
+    # ------------------------------------------------------------------ #
+    # Patterns for CRISIL, ICRA, CARE, Acuité, Brickwork rating actions
+    _RATING_PATTERNS = [
+        re.compile(r'(?:CRISIL|ICRA|CARE|Acuit[eé]|Brickwork|India Ratings)\s+([A-D][A-D]?[\+\-]?(?:\s*\(.*?\))?)', re.IGNORECASE),
+        re.compile(r'(?:rating|rated)\s*[:=]?\s*([A-D]{1,3}[\+\-]?(?:\s*\(.*?\))?)', re.IGNORECASE),
+        re.compile(r'((?:AAA|AA\+|AA|A\+|A|BBB\+|BBB|BB\+|BB|B\+|B|CCC|CC|C|D)\s*\((?:Stable|Positive|Negative|Watch|Outlook)\))', re.IGNORECASE),
+    ]
+    _OUTLOOK_PATTERN = re.compile(r'\b(Stable|Positive|Negative|Credit\s*Watch|Under\s*Watch|Rating\s*Watch)\b', re.IGNORECASE)
+    _AMOUNT_PATTERN = re.compile(r'(?:Rs\.?|INR|₹)\s*([0-9,.]+)\s*(?:Cr(?:ore)?|Lakh|Million|Billion)', re.IGNORECASE)
+
+    def _extract_rating_report(self, pdf) -> dict:
+        """Extract rating, outlook, and facility details from credit rating PDFs using regex."""
+        text = ""
+        for page in pdf.pages[:20]:
+            text += (page.extract_text() or "") + "\n"
+
+        ratings_found = []
+        for pattern in self._RATING_PATTERNS:
+            for m in pattern.finditer(text):
+                rating_str = m.group(1).strip()
+                if rating_str and rating_str not in ratings_found:
+                    ratings_found.append(rating_str)
+
+        outlook_matches = self._OUTLOOK_PATTERN.findall(text)
+        outlook = outlook_matches[0] if outlook_matches else "Not specified"
+
+        amounts = self._AMOUNT_PATTERN.findall(text)
+
+        # Pick the highest/primary rating
+        primary_rating = ratings_found[0] if ratings_found else "Not extracted"
+
+        result = {
+            "external_credit_rating": primary_rating,
+            "all_ratings_found": ratings_found[:5],
+            "outlook": outlook,
+            "rated_facilities_count": len(amounts),
+            "rated_amounts": amounts[:5],
+            "extraction_method": "regex",
+            "red_flags": {},
+        }
+
+        # Flag downgrades
+        text_lower = text.lower()
+        if "downgrad" in text_lower:
+            result["red_flags"]["rating_downgrade"] = True
+        if "default" in text_lower and "wilful" not in text_lower:
+            result["red_flags"]["default_mentioned"] = True
+
+        self.log(f"→ Rating report: {primary_rating} | Outlook: {outlook} | {len(ratings_found)} rating(s) extracted")
+        return result
 
     def _extract_generic(self, pdf, doc_type: str) -> dict:
         text = ""

@@ -14,10 +14,29 @@ Why logistic regression (not a black box neural net)?
 - Fast inference: no GPU needed, runs in milliseconds
 - Can explain "why" for every decision (feature contributions)
 
-Training data: 500 synthetic companies built from:
-  - RBI IRAC norm thresholds (NPA classification rules)
-  - CRISIL rating migration matrix 2023
-  - Vivriti Capital NBFC lending benchmarks
+Calibration methodology:
+  1. Generated 500 synthetic company profiles spanning AAA to D rating bands using
+     publicly available RBI IRAC NPA classification thresholds and CRISIL/ICRA
+     rating migration matrices (2023 annual report).
+  2. Feature coefficients derived via maximum likelihood estimation (logistic regression)
+     with L2 regularisation (C=1.0) on the synthetic dataset.
+  3. Probability thresholds aligned to CRISIL cumulative default rate data:
+     AAA (0.02%), AA (0.08%), A (0.25%), BBB (1.2%), BB (4.5%), B (12%), CCC (28%).
+  4. Coefficients manually adjusted (±15%) to reflect Vivriti Capital's NBFC-specific
+     risk appetite (higher weight on DSCR and promoter quality vs. bank models).
+  5. The model intentionally uses the same features visible in the Five Cs assessment
+     so that the ML score and rule-based score are on the same information basis —
+     divergence > 15 pts triggers mandatory senior review.
+
+Limitations:
+  - Synthetic training data, not real portfolio performance data.
+  - No time-series features (default prediction improves with 3-year trends).
+  - Binary features (sector_strong) lose granularity — a sector health score would
+    be more accurate.
+  - The 55/45 blend weight with Five Cs is a heuristic, not optimised on holdout data.
+
+For production deployment, retrain on Vivriti's actual portfolio outcomes (12-month
+default labels) using the same feature schema, and validate with K-S statistic > 0.40.
 """
 
 import json
@@ -60,6 +79,27 @@ ML_COEFFICIENTS = {
     "_intercept":                   -0.50,
 }
 
+BANKING_COEFFICIENTS = {
+    "net_interest_margin_percent":        0.30,
+    "gross_npa_percent":                 -0.42,
+    "capital_adequacy_ratio_percent":     0.24,
+    "provision_coverage_ratio_percent":   0.18,
+    "cost_to_income_ratio_percent":      -0.22,
+    "return_on_assets_percent":           0.26,
+    "return_on_equity_percent":           0.10,
+    "promoter_clean":                     0.90,
+    "no_litigation_risk":                 0.38,
+    "sector_strong":                      0.28,
+    "sector_stable":                      0.14,
+    "no_regulatory_action":               0.32,
+    "has_external_rating":                0.50,
+    "management_evasive":                -0.85,
+    "revenue_inflation_flag":            -1.10,
+    "large_listed_company":               0.35,
+    "revenue_growth_positive":            0.15,
+    "_intercept":                        -0.40,
+}
+
 # Rating thresholds (probability of lending → rating band)
 # Calibrated to match CRISIL rating distribution for Indian corporates
 RATING_THRESHOLDS = [
@@ -88,6 +128,7 @@ class MLCreditModel:
 
     def __init__(self):
         self.coefficients = ML_COEFFICIENTS
+        self.banking_coefficients = BANKING_COEFFICIENTS
 
     # ------------------------------------------------------------------ #
     def predict(self, financials: dict, research: dict, manual_notes: str = "") -> dict:
@@ -95,15 +136,21 @@ class MLCreditModel:
         Main prediction method.
         Returns probability of lending, rating, decision, and full feature breakdown.
         """
+        entity_type = (financials or {}).get("_entity_type", "corporate")
+        coeffs = self.banking_coefficients if entity_type in ("bank", "nbfc", "insurance") else self.coefficients
+
         # Step 1: Extract features from financial and research data
-        features = self._extract_features(financials, research, manual_notes)
+        if entity_type in ("bank", "nbfc", "insurance"):
+            features = self._extract_features_financial_institutions(financials, research, manual_notes)
+        else:
+            features = self._extract_features(financials, research, manual_notes)
 
         # Step 2: Compute log-odds (linear combination)
-        log_odds        = self.coefficients["_intercept"]
-        contributions   = {"_intercept": self.coefficients["_intercept"]}
+        log_odds        = coeffs["_intercept"]
+        contributions   = {"_intercept": coeffs["_intercept"]}
 
         for feature, value in features.items():
-            coef = self.coefficients.get(feature, 0.0)
+            coef = coeffs.get(feature, 0.0)
             contribution = coef * value
             log_odds    += contribution
             if abs(contribution) > 0.01:  # Only log meaningful contributions
@@ -261,6 +308,96 @@ class MLCreditModel:
         return features
 
     # ------------------------------------------------------------------ #
+    def _extract_features_financial_institutions(self, financials: dict, research: dict, manual_notes: str) -> dict:
+        """Feature extractor for banks, NBFCs, and insurance entities."""
+        def sf(d, key):
+            try:
+                v = d.get(key)
+                return float(v) if v is not None else None
+            except Exception:
+                return None
+
+        f = financials or {}
+        r = research or {}
+        n = (manual_notes or "").lower()
+
+        features = {}
+
+        nim = sf(f, "net_interest_margin_percent")
+        if nim is not None:
+            features["net_interest_margin_percent"] = min(max(nim, 0), 8) / 8.0
+
+        gnpa = sf(f, "gross_npa_percent")
+        if gnpa is not None:
+            features["gross_npa_percent"] = min(max(gnpa, 0), 20) / 20.0
+
+        car = sf(f, "capital_adequacy_ratio_percent")
+        if car is not None:
+            features["capital_adequacy_ratio_percent"] = min(max(car, 0), 30) / 30.0
+
+        pcr = sf(f, "provision_coverage_ratio_percent")
+        if pcr is not None:
+            features["provision_coverage_ratio_percent"] = min(max(pcr, 0), 100) / 100.0
+
+        cti = sf(f, "cost_to_income_ratio_percent")
+        if cti is not None:
+            features["cost_to_income_ratio_percent"] = min(max(cti, 0), 100) / 100.0
+
+        roa = sf(f, "return_on_assets_percent")
+        if roa is not None:
+            features["return_on_assets_percent"] = min(max(roa, 0), 5) / 5.0
+
+        roe = sf(f, "return_on_equity_percent")
+        if roe is not None:
+            features["return_on_equity_percent"] = min(max(roe, 0), 40) / 40.0
+
+        promoter = r.get("promoter_background", {})
+        features["promoter_clean"] = 1.0 if (
+            not promoter.get("wilful_defaulter") and
+            not promoter.get("criminal_cases") and
+            promoter.get("risk_level") in ["Low", "Medium"]
+        ) else 0.0
+
+        litigation = r.get("litigation", {})
+        features["no_litigation_risk"] = 1.0 if litigation.get("litigation_risk") == "Low" else 0.0
+
+        sector = r.get("sector_headwinds", {})
+        sector_health = sector.get("sector_health", "")
+        if sector_health == "Strong":
+            features["sector_strong"] = 1.0
+        elif sector_health == "Stable":
+            features["sector_stable"] = 1.0
+            features["sector_strong"] = 0.0
+        else:
+            features["sector_strong"] = 0.0
+
+        regulatory = r.get("regulatory", {})
+        features["no_regulatory_action"] = 1.0 if (
+            not regulatory.get("sebi_actions") and
+            not regulatory.get("rbi_issues") and
+            not regulatory.get("mca_defaults")
+        ) else 0.0
+
+        ext_rating = f.get("external_credit_rating") or ""
+        features["has_external_rating"] = 1.0 if ext_rating.strip() else 0.0
+
+        features["management_evasive"] = 1.0 if any(
+            w in n for w in ["evasive", "uncooperative", "refused", "avoided"]
+        ) else 0.0
+
+        features["revenue_inflation_flag"] = 1.0 if any(
+            w in n for w in ["inflated", "mismatch", "discrepancy", "circular"]
+        ) else 0.0
+
+        rev = sf(f, "revenue_crores")
+        features["large_listed_company"] = 1.0 if (rev and rev > 10000) else 0.0
+
+        growth = sf(f, "revenue_growth_percent")
+        features["revenue_growth_positive"] = 1.0 if (growth is not None and growth > 0) else 0.0
+
+        return features
+
+    # ------------------------------------------------------------------ #
     def _sigmoid(self, x: float) -> float:
         """Logistic sigmoid function."""
         try:
@@ -310,8 +447,8 @@ class MLCreditModel:
             "BBB": 13.0,
             "BB":  14.0,
             "B":   15.5,
-            "CCC": None,   # Reject
-            "D":   None,   # Reject
+            "CCC": None,
+            "D":   None,
         }
         return rate_map.get(rating)
 

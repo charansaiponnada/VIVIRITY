@@ -1,0 +1,24 @@
+{
+    "company_name": "TechVista Solutions Pvt Ltd",
+    "cibil_report_date": "2025-01-15",
+    "credit_score": 620,
+    "total_credit_facilities": 8,
+    "active_facilities": 5,
+    "total_outstanding_crores": 245.5,
+    "max_dpd": 120,
+    "dpd_90_plus": 120,
+    "suit_filed": false,
+    "wilful_defaulter": false,
+    "overdue_amount_crores": 18.3,
+    "credit_enquiries_last_6m": 7,
+    "facility_details": [
+        {"lender": "State Bank of India", "type": "Term Loan", "sanctioned_crores": 100, "outstanding_crores": 82, "dpd": 120},
+        {"lender": "HDFC Bank", "type": "Working Capital", "sanctioned_crores": 75, "outstanding_crores": 68, "dpd": 0},
+        {"lender": "ICICI Bank", "type": "OD/CC", "sanctioned_crores": 50, "outstanding_crores": 45, "dpd": 30},
+        {"lender": "Axis Bank", "type": "Term Loan", "sanctioned_crores": 60, "outstanding_crores": 42, "dpd": 0},
+        {"lender": "Bank of Baroda", "type": "Working Capital", "sanctioned_crores": 30, "outstanding_crores": 8.5, "dpd": 0}
+    ],
+    "red_flags": {
+        "high_credit_enquiries": true
+    }
+}

@@ -1,0 +1,55 @@
+{
+  "record_id": "9220f779937b",
+  "company_name": "Yes Bank",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-08T14:54:14.553444",
+  "ml_probability_of_lending": 0.7575,
+  "ml_score": 75.8,
+  "ml_rating": "A",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "sector_stable",
+      "contribution": 0.15,
+      "interpretation": "Stable sector \u2014 neutral to mildly positive for lending"
+    },
+    {
+      "feature": "ebitda_margin_percent",
+      "contribution": 0.12,
+      "interpretation": "Healthy operating margins"
+    },
+    {
+      "feature": "interest_coverage_ratio",
+      "contribution": 0.019,
+      "interpretation": "Strong interest coverage \u2192 high debt service capacity"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 70.75,
+  "five_cs_final_score": 40.75,
+  "five_cs_rating": "CCC",
+  "penalty_applied": 30,
+  "final_decision": "CONDITIONAL_APPROVE",
+  "final_rating": "B",
+  "interest_rate_percent": 15.5,
+  "recommended_amount_crores": 222.0,
+  "tenure_months": 60,
+  "decision_rationale": "Yes Bank receives a 'CONDITIONAL_APPROVE' despite a blended risk score of 56.52/100 and a 'B' rating, driven by an exceptionally high EBITDA margin of 1508.28% (Capacity score: 80) and significant total assets of \u20b9423,422.0 Cr (Capital: 60, Collateral: 60). However, the approval is tempered by a very low Interest Coverage Ratio of 1.02x, an 'npa_mention': true impacting Capacity and Collateral, and a high MCA risk (Character: 75) due to 'roc_notices': true. The company's 'HIGH DIVERGENCE' (35.0 pts) between Five Cs and ML models, coupled with a 30-point penalty for serious distress indicators like 'NPA classification mentioned' and active 'IBC/CIRP insolvency proceedings', necessitates a conservative approach with specific conditions."
+}

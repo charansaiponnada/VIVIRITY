@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-08T15:51:10.845529", "session_id": "a4134dac", "operation": "WRITE_BRONZE", "doc_type": "annual_report", "record_id": "61be4f306001", "company": "Yes Bank", "notes": ""}
+{"timestamp": "2026-03-08T15:51:10.852070", "session_id": "a4134dac", "operation": "WRITE_GOLD", "doc_type": "ml_scoring", "record_id": "f088e5ec328e", "company": "Yes Bank", "notes": ""}
