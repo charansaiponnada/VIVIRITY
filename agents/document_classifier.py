@@ -19,6 +19,12 @@ DOCUMENT_TYPES = {
         "savings account", "transaction history", "opening balance",
         "closing balance", "debit", "credit", "ifsc",
     ],
+    "itr_filing": [
+        "income tax return", "itr", "assessment year", "acknowledgement number",
+        "form itr-6", "form itr-3", "profit and gains from business",
+        "total taxable income", "tax paid", "tax payable", "advance tax",
+        "tcs", "tds",
+    ],
     "legal_notice": [
         "legal notice", "demand notice", "notice under section",
         "writ petition", "arbitration notice", "cease and desist",
@@ -47,6 +53,7 @@ PRIORITY = [
     "annual_report",
     "gst_filing",
     "bank_statement",
+    "itr_filing",
     "legal_notice",
     "sanction_letter",
     "cibil_report",

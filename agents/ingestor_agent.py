@@ -166,6 +166,14 @@ class IngestorAgent:
                     data.get("gstr3b_turnover_crores") or
                     data.get("gstr1_turnover_crores")
                 )
+        elif any(k in keys_lower for k in ["itr", "assessment_year", "taxable_income", "gross_total_income", "pan"]):
+            doc_type = "itr_filing"
+            if not data.get("revenue_crores"):
+                data["revenue_crores"] = (
+                    data.get("gross_total_income_crores") or
+                    data.get("total_income_crores") or
+                    data.get("business_income_crores")
+                )
         elif any(k in keys_lower for k in ["cibil", "credit_score", "dpd", "suit_filed"]):
             doc_type = "cibil_report"
             # Derive CIBIL red flags for penalty engine
@@ -254,8 +262,14 @@ class IngestorAgent:
             return self._extract_annual_report(pdf, path, page_count)
         elif doc_type == "gst_filing":
             return self._extract_gst(pdf)
+        elif doc_type == "itr_filing":
+            return self._extract_itr(pdf)
         elif doc_type == "bank_statement":
             return self._extract_bank_statement(pdf)
+        elif doc_type == "legal_notice":
+            return self._extract_legal_notice(pdf)
+        elif doc_type == "sanction_letter":
+            return self._extract_sanction_letter(pdf)
         elif doc_type == "rating_report":
             return self._extract_rating_report(pdf)
         else:
@@ -1199,6 +1213,70 @@ Return ONLY valid JSON. No markdown.
             return result
         except Exception as e:
             print(f"[Ingestor] GST extraction error: {e}")
+            return {"red_flags": {}}
+
+    def _extract_itr(self, pdf) -> dict:
+        """Extract ITR filing data from PDF for tax-vs-revenue consistency checks."""
+        text = ""
+        for page in pdf.pages[:20]:
+            text += page.extract_text() or ""
+
+        prompt = f"""
+You are a senior credit analyst specializing in Indian Income Tax Return analysis.
+Extract key ITR fields from this document.
+
+CRITICAL DISTINCTIONS:
+- Capture Assessment Year and PAN where available
+- Extract total income and business/profession income in INR crores
+- Capture tax paid vs tax payable mismatch as a compliance signal
+
+Text:
+{text[:10000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "assessment_year": null,
+    "pan": null,
+    "total_income_crores": null,
+    "gross_total_income_crores": null,
+    "business_income_crores": null,
+    "tax_paid_crores": null,
+    "tax_payable_crores": null,
+    "advance_tax_crores": null,
+    "tds_tcs_crores": null,
+    "tax_mismatch_percent": null,
+    "revenue_crores": null,
+    "red_flags": {{}}
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+
+            if not result.get("revenue_crores"):
+                result["revenue_crores"] = (
+                    result.get("gross_total_income_crores") or
+                    result.get("total_income_crores") or
+                    result.get("business_income_crores")
+                )
+
+            tp = result.get("tax_paid_crores")
+            tv = result.get("tax_payable_crores")
+            try:
+                if tp is not None and tv not in (None, 0, "0"):
+                    tp_f = float(tp)
+                    tv_f = float(tv)
+                    mismatch = abs(tp_f - tv_f) / tv_f if tv_f > 0 else 0
+                    result["tax_mismatch_percent"] = round(mismatch * 100, 2)
+                    if mismatch > 0.10:
+                        result.setdefault("red_flags", {})["itr_tax_mismatch"] = True
+            except Exception:
+                pass
+
+            return result
+        except Exception as e:
+            print(f"[Ingestor] ITR extraction error: {e}")
             return {"red_flags": {}}
 
     def _extract_bank_statement(self, pdf) -> dict:

@@ -125,6 +125,36 @@ class CrossReferenceAgent:
                     "description": f"{bounce_count} bounced transactions detected in bank statement",
                 })
 
+        # ITR vs Annual Report turnover cross-check
+        if "itr_filing" in self.documents and "annual_report" in self.documents:
+            itr_rev = self._extract_revenue(self.documents["itr_filing"])
+            ar_rev = self._extract_revenue(self.documents["annual_report"])
+            findings["itr_vs_annual_report"] = {"itr_revenue": itr_rev, "ar_revenue": ar_rev}
+
+            if itr_rev and ar_rev and ar_rev > 0:
+                variance = abs(itr_rev - ar_rev) / ar_rev
+                if variance > 0.20:
+                    flags.append({
+                        "type": "REVENUE_MISMATCH",
+                        "severity": "HIGH" if variance > 0.30 else "MEDIUM",
+                        "description": f"ITR income ({itr_rev:.0f} Cr) vs Annual Report revenue ({ar_rev:.0f} Cr) — {variance*100:.1f}% variance",
+                    })
+
+        # ITR vs Bank statement consistency check
+        if "itr_filing" in self.documents and "bank_statement" in self.documents:
+            itr_rev = self._extract_revenue(self.documents["itr_filing"])
+            bank_rev = self._extract_revenue(self.documents["bank_statement"])
+            findings["itr_vs_bank_statement"] = {"itr_revenue": itr_rev, "bank_credits": bank_rev}
+
+            if itr_rev and bank_rev and itr_rev > 0:
+                variance = abs(itr_rev - bank_rev) / itr_rev
+                if variance > 0.25:
+                    flags.append({
+                        "type": "CASHFLOW_MISMATCH",
+                        "severity": "MEDIUM",
+                        "description": f"ITR income ({itr_rev:.0f} Cr) vs bank credits ({bank_rev:.0f} Cr) — {variance*100:.1f}% variance",
+                    })
+
         # GST: GSTR-2A vs GSTR-3B ITC mismatch detection
         if "gst_filing" in self.documents:
             gst = self.documents["gst_filing"]
