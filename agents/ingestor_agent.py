@@ -1326,6 +1326,94 @@ Return ONLY valid JSON. No markdown.
             print(f"[Ingestor] Bank statement extraction error: {e}")
             return {"red_flags": {}}
 
+    def _extract_legal_notice(self, pdf) -> dict:
+        """Extract legal proceedings and liability signals from legal notices."""
+        text = ""
+        for page in pdf.pages[:25]:
+            text += (page.extract_text() or "") + "\n"
+
+        prompt = f"""
+You are a credit risk legal analyst. Extract litigation and legal risk details from this legal notice.
+
+Text:
+{text[:12000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "notice_type": null,
+    "forum": null,
+    "case_number": null,
+    "filing_date": null,
+    "counterparty": null,
+    "allegation_summary": null,
+    "claim_amount_crores": null,
+    "current_stage": null,
+    "hearing_date": null,
+    "adverse_order_risk": "Low/Medium/High",
+    "red_flags": {{}}
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            rf = result.setdefault("red_flags", {})
+            risk = str(result.get("adverse_order_risk", "")).lower()
+            if "high" in risk:
+                rf["high_legal_risk"] = True
+            if result.get("claim_amount_crores") not in (None, ""):
+                try:
+                    if float(result["claim_amount_crores"]) >= 10:
+                        rf["material_legal_claim"] = True
+                except Exception:
+                    pass
+            return result
+        except Exception as e:
+            print(f"[Ingestor] Legal notice extraction error: {e}")
+            return {"red_flags": {}}
+
+    def _extract_sanction_letter(self, pdf) -> dict:
+        """Extract sanctioned facility terms and covenant obligations."""
+        text = ""
+        for page in pdf.pages[:25]:
+            text += (page.extract_text() or "") + "\n"
+
+        prompt = f"""
+You are a credit operations analyst. Extract facility terms from this loan sanction letter.
+
+Text:
+{text[:12000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "lender_name": null,
+    "facility_type": null,
+    "sanctioned_amount_crores": null,
+    "outstanding_amount_crores": null,
+    "interest_rate_percent": null,
+    "tenure_months": null,
+    "security_details": null,
+    "covenants": [],
+    "repayment_frequency": null,
+    "default_clause_present": false,
+    "breach_or_delay_mentions": false,
+    "red_flags": {{}}
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            rf = result.setdefault("red_flags", {})
+            if result.get("default_clause_present"):
+                rf["strict_default_clauses"] = True
+            if result.get("breach_or_delay_mentions"):
+                rf["repayment_breach_mentioned"] = True
+            return result
+        except Exception as e:
+            print(f"[Ingestor] Sanction letter extraction error: {e}")
+            return {"red_flags": {}}
+
     # ------------------------------------------------------------------ #
     # Rating report regex extractor
     # ------------------------------------------------------------------ #
