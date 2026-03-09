@@ -132,6 +132,8 @@ class IngestorAgent:
                     self.log(f"→ Classified as: {doc_type.upper().replace('_',' ')} ({page_count} pages, targeted up to {min(PAGE_BUDGET, page_count)} pages)")
 
                     extracted = self._extract(pdf, path, doc_type, page_count)
+                    # Capture rating anchors from any uploaded PDF (not only rating_report docs).
+                    extracted = self._enrich_external_rating_from_text(pdf, extracted)
                     extracted["_entity_type"] = self._entity_type
                     extracted = self._compute_ratios(extracted)
 
@@ -434,7 +436,127 @@ class IngestorAgent:
                         print(f"  [NotesExtraction] Filled {key} = {notes_data[key]}")
 
         merged["extraction_method"] = "VectorLess RAG — Split two-call + notes extraction"
+        merged = self._normalize_currency_and_debt_signals(merged, income_text + "\n" + balance_text)
         return merged
+
+    # ------------------------------------------------------------------ #
+    def _enrich_external_rating_from_text(self, pdf, data: dict) -> dict:
+        """Attach external rating if present in raw text even when document type isn't rating_report."""
+        if not isinstance(data, dict):
+            data = {}
+
+        if data.get("external_credit_rating"):
+            return data
+
+        text = ""
+        try:
+            for page in pdf.pages[:20]:
+                text += (page.extract_text() or "") + "\n"
+        except Exception:
+            return data
+
+        # Prefer explicit agency+rating forms like "CRISIL AAA" / "ICRA AA+".
+        agency_first = re.search(
+            r'\b(CRISIL|ICRA|CARE|India\s+Ratings|Brickwork|Acuit[e\u00e9])\b[^\n]{0,80}?\b(AAA|AA\+|AA|A\+|A|BBB\+|BBB|BB\+|BB|B\+|B|CCC|CC|C|D)\b',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if agency_first:
+            agency = agency_first.group(1).upper().replace("  ", " ")
+            rating = agency_first.group(2).upper()
+            data["external_credit_rating"] = f"{agency} {rating}"
+            return data
+
+        # Fallback to an existing generic pattern if agency-first form is not found.
+        generic = re.search(r'\b(AAA|AA\+|AA|A\+|A|BBB\+|BBB|BB\+|BB|B\+|B|CCC|CC|C|D)\b', text, flags=re.IGNORECASE)
+        if generic and ("crisil" in text.lower() or "icra" in text.lower() or "care" in text.lower()):
+            data["external_credit_rating"] = generic.group(1).upper()
+
+        return data
+
+    # ------------------------------------------------------------------ #
+    def _normalize_currency_and_debt_signals(self, data: dict, context_text: str) -> dict:
+        """
+        Post-process annual report extraction to reduce USD-million contamination and
+        capture explicit zero-debt declarations.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        txt = (context_text or "")
+        txt_l = txt.lower()
+
+        def _f(x):
+            try:
+                return float(x) if x is not None else None
+            except Exception:
+                return None
+
+        # Zero-debt assertions appear in many large-cap reports and should be respected.
+        zero_debt_markers = [
+            "zero debt",
+            "debt free",
+            "debt-free",
+            "no debt",
+            "nil debt",
+            "debt free balance sheet",
+        ]
+        if any(m in txt_l for m in zero_debt_markers):
+            data["total_borrowings_crores"] = 0.0
+            if data.get("long_term_borrowings_crores") is None:
+                data["long_term_borrowings_crores"] = 0.0
+            if data.get("short_term_borrowings_crores") is None:
+                data["short_term_borrowings_crores"] = 0.0
+
+        # Currency contamination heuristic: document contains both USD million and INR crore notations.
+        has_usd_million = bool(re.search(r'\bUSD\b[^\n]{0,25}\b(million|mn)\b|\bUS\$\b[^\n]{0,25}\b(million|mn)\b', txt, flags=re.IGNORECASE))
+        has_inr_crore = bool(re.search(r'\bINR\b[^\n]{0,25}\b(crore|cr)\b|\bRs\.?\b[^\n]{0,25}\b(crore|cr)\b|\u20b9[^\n]{0,25}\b(crore|cr)\b', txt, flags=re.IGNORECASE))
+
+        if has_usd_million and has_inr_crore:
+            # Try to directly capture INR-crore values near key labels first.
+            key_patterns = {
+                "revenue_crores": ["revenue from operations", "revenue", "total income"],
+                "profit_after_tax_crores": ["profit after tax", "profit for the year", "net profit"],
+                "ebitda_crores": ["ebitda", "operating profit"],
+                "total_assets_crores": ["total assets", "assets"],
+            }
+
+            for field, labels in key_patterns.items():
+                if data.get(field) is not None:
+                    continue
+                for label in labels:
+                    m = re.search(
+                        rf'{re.escape(label)}[^\n]{{0,120}}?(?:INR|Rs\.?|\u20b9)?\s*([0-9]{{1,3}}(?:,[0-9]{{2,3}})*(?:\.[0-9]+)?)\s*(?:crore|cr)\b',
+                        txt,
+                        flags=re.IGNORECASE,
+                    )
+                    if m:
+                        try:
+                            data[field] = float(m.group(1).replace(",", ""))
+                            break
+                        except Exception:
+                            pass
+
+            # If values are still suspiciously small for a report that has both unit systems,
+            # convert likely USD-million values to INR-crore with a conservative default FX rate.
+            fx_match = re.search(r'(?:USD|US\$)\s*1\s*=\s*(?:INR|Rs\.?|\u20b9)\s*([0-9]+(?:\.[0-9]+)?)', txt, flags=re.IGNORECASE)
+            usd_inr = float(fx_match.group(1)) if fx_match else 83.0
+            usd_mn_to_inr_cr = usd_inr / 10.0
+
+            probe_fields = ["revenue_crores", "profit_after_tax_crores", "ebitda_crores", "total_assets_crores"]
+            probe_vals = [_f(data.get(k)) for k in probe_fields]
+            present_vals = [v for v in probe_vals if v is not None and v > 0]
+            suspicious_usd_profile = len(present_vals) >= 3 and all(v < 50000 for v in present_vals)
+
+            if suspicious_usd_profile:
+                for field in probe_fields:
+                    v = _f(data.get(field))
+                    if v is not None and v > 0:
+                        data[field] = round(v * usd_mn_to_inr_cr, 2)
+                        data.setdefault("extraction_notes", "")
+                        data["extraction_notes"] = (data.get("extraction_notes") or "") + f" | unit-normalized:{field}"
+
+        return data
 
     # ------------------------------------------------------------------ #
     def _ai_extract_notes(self, text: str, tables_str: str) -> dict:
@@ -923,6 +1045,12 @@ Return ONLY a JSON array of director objects. No markdown.
             debt = lt_d + st_d
             data["total_borrowings_crores"] = round(debt, 2)
             computed.append(f"Debt={debt:.0f}Cr")
+
+        # Explicitly treat missing debt with zero-valued components as debt-free.
+        if debt is None and ((lt_d == 0 and st_d in (0, None)) or (st_d == 0 and lt_d in (0, None))):
+            debt = 0.0
+            data["total_borrowings_crores"] = 0.0
+            computed.append("Debt=0Cr")
 
         # FIX #3 — Finance cost fallback: estimate from debt × 8.5% weighted avg rate
         if fin is None and debt is not None and debt > 0:

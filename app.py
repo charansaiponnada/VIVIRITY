@@ -192,6 +192,18 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
 
     # Research can contribute rating when financial extraction misses it.
     if _is_missing(fin.get("external_credit_rating")):
+        # Prefer direct rating evidence from any uploaded supporting doc.
+        for source_name, source_doc in (all_docs or {}).items():
+            if not isinstance(source_doc, dict):
+                continue
+            doc_rating = source_doc.get("external_credit_rating")
+            if not _is_missing(doc_rating):
+                fin["external_credit_rating"] = doc_rating
+                backfilled.append(f"external_credit_rating<-{source_name}")
+                source_map["external_credit_rating"] = source_name
+                break
+
+    if _is_missing(fin.get("external_credit_rating")):
         ext_rating = research.get("external_credit_rating") or research.get("company_news", {}).get("external_credit_rating")
         if not _is_missing(ext_rating):
             fin["external_credit_rating"] = ext_rating

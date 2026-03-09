@@ -1112,7 +1112,9 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # Capital floor
         capital_floor, capital_reason = 40, "No leverage data"
         if de is not None:
-            if de <= 0.3:   capital_floor, capital_reason = 85, f"D/E {de:.2f}x (≤0.3x very low)"
+            if de == 0:
+                capital_floor, capital_reason = 90, "D/E 0.00x (debt-free balance sheet)"
+            elif de <= 0.3:   capital_floor, capital_reason = 85, f"D/E {de:.2f}x (≤0.3x very low)"
             elif de <= 0.75:capital_floor, capital_reason = 75, f"D/E {de:.2f}x (0.3-0.75x low)"
             elif de <= 1.5: capital_floor, capital_reason = 62, f"D/E {de:.2f}x (0.75-1.5x moderate)"
             elif de <= 3:   capital_floor, capital_reason = 48, f"D/E {de:.2f}x (1.5-3x high)"
