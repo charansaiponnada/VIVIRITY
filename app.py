@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 import tempfile
 import streamlit as st
 from datetime import datetime
@@ -115,6 +116,20 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
     backfilled = []
     source_map = {}
 
+    def _coerce_num(value):
+        if _is_missing(value):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            m = re.search(r"-?\d+(?:\.\d+)?", value.replace(",", ""))
+            if m:
+                try:
+                    return float(m.group(0))
+                except Exception:
+                    return value
+        return value
+
     # Tag fields already present in primary extraction as annual_report sourced.
     tracked_fields = [
         "revenue_crores",
@@ -182,6 +197,22 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
             fin["external_credit_rating"] = ext_rating
             backfilled.append("external_credit_rating<-research")
             source_map["external_credit_rating"] = "research"
+
+    # Backfill core financial metrics from structured research snapshot when docs are sparse.
+    research_snapshot = research.get("financial_snapshot", {}) if isinstance(research, dict) else {}
+    research_metric_map = {
+        "revenue_crores": "revenue_crores",
+        "profit_after_tax_crores": "profit_after_tax_crores",
+        "ebitda_crores": "ebitda_crores",
+        "debt_equity_ratio": "debt_equity_ratio",
+        "current_ratio": "current_ratio",
+        "net_worth_crores": "net_worth_crores",
+    }
+    for fin_key, research_key in research_metric_map.items():
+        if _is_missing(fin.get(fin_key)) and not _is_missing(research_snapshot.get(research_key)):
+            fin[fin_key] = _coerce_num(research_snapshot.get(research_key))
+            backfilled.append(f"{fin_key}<-research.{research_key}")
+            source_map[fin_key] = "research"
 
     # Keep company name populated in summary even if parser missed identity fields.
     if _is_missing(fin.get("company_name")) and company_name:

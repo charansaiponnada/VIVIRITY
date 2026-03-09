@@ -192,6 +192,8 @@ IMPORTANT ANALYSIS RULES:
 5. Credit ratings: CRISIL/ICRA/CARE/Brickwork — note the exact rating and outlook
 6. Promoter: Look specifically for wilful defaulter lists, SFIO investigations, criminal cases
 7. Sector: Note specific RBI sectoral limits, NBFC exposure norms for this sector
+8. Financial snapshot: If credible sources mention numbers, extract latest approximate values in INR crores for
+    revenue, PAT, EBITDA, net worth, D/E and current ratio. Use null when unavailable.
 
 Return ONLY valid JSON. No markdown. No thinking tokens. null for unknown.
 {{
@@ -248,6 +250,17 @@ Return ONLY valid JSON. No markdown. No thinking tokens. null for unknown.
         "lending_risk": "Low/Medium/High",
         "summary": ""
     }},
+    "financial_snapshot": {{
+        "revenue_crores": null,
+        "profit_after_tax_crores": null,
+        "ebitda_crores": null,
+        "debt_equity_ratio": null,
+        "current_ratio": null,
+        "net_worth_crores": null,
+        "source_period": null,
+        "confidence": "Low/Medium/High",
+        "summary": ""
+    }},
     "overall_sentiment": {{
         "risk_rating": "A/B/C/D",
         "top_risks": [],
@@ -269,6 +282,19 @@ Return ONLY valid JSON. No markdown. No thinking tokens. null for unknown.
             if ext_rating:
                 result["external_credit_rating"] = ext_rating
 
+            # Ensure downstream app logic always has a stable financial snapshot object.
+            result.setdefault("financial_snapshot", {
+                "revenue_crores": None,
+                "profit_after_tax_crores": None,
+                "ebitda_crores": None,
+                "debt_equity_ratio": None,
+                "current_ratio": None,
+                "net_worth_crores": None,
+                "source_period": None,
+                "confidence": "Low",
+                "summary": "",
+            })
+
             # Normalise litigation field name for backward compatibility
             if "legal_disputes" in result and "litigation" not in result:
                 result["litigation"] = result["legal_disputes"]
@@ -289,6 +315,17 @@ Return ONLY valid JSON. No markdown. No thinking tokens. null for unknown.
             "litigation":        {"nclt_proceedings": False, "drt_cases": False, "litigation_risk": "Low", "summary": ""},
             "regulatory":        {"sebi_actions": False, "rbi_issues": False, "mca_defaults": False, "regulatory_risk": "Low"},
             "sector_headwinds":  {"sector_health": "Stable", "lending_risk": "Medium", "summary": ""},
+            "financial_snapshot": {
+                "revenue_crores": None,
+                "profit_after_tax_crores": None,
+                "ebitda_crores": None,
+                "debt_equity_ratio": None,
+                "current_ratio": None,
+                "net_worth_crores": None,
+                "source_period": None,
+                "confidence": "Low",
+                "summary": "",
+            },
             "overall_sentiment": {"risk_rating": "B", "top_risks": [], "positive_factors": [], "early_warning_signals": [], "preliminary_recommendation": "Caution"},
             "research_unavailable": True,
         }
