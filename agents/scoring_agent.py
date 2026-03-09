@@ -431,10 +431,10 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
     "rejection_reason": null
 }}
 """
-        time.sleep(3)
-        response = _gemini_with_retry(self.client, self.model, prompt)
-        raw      = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
-        result   = self._parse_json(raw)
+            time.sleep(3)
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw      = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result   = self._parse_json(raw)
 
         # Hard-set computed values — Gemini cannot override these
         result["decision"]                  = decision
