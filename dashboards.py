@@ -95,7 +95,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
             number={"suffix": "/100", "font": {"size": 28}},
         ))
         fig.update_layout(height=250, margin=dict(t=40, b=10, l=30, r=30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col2:
         # ML Lending Probability Gauge
@@ -115,7 +115,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
             number={"suffix": "%", "font": {"size": 24}},
         ))
         fig2.update_layout(height=250, margin=dict(t=40, b=10, l=30, r=30))
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width="stretch")
 
     with col3:
         # Rating + Decision card
@@ -168,7 +168,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
             margin=dict(t=50, b=30, l=50, r=50),
             showlegend=False,
         )
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width="stretch")
 
     with col_b:
         # Score Breakdown bars
@@ -200,7 +200,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
             xaxis_title="Contribution to Final Score",
             yaxis=dict(autorange="reversed"),
         )
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width="stretch")
 
         penalty = risk_score.get("penalty_applied", 0)
         if penalty > 0:
@@ -285,7 +285,7 @@ def render_risk_intelligence(scoring: dict, research: dict,
                 title="Risk Severity Heatmap",
                 height=200, margin=dict(t=40, b=20, l=80, r=20),
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
 
         # Individual signal cards
         for s in signals:
@@ -366,7 +366,7 @@ Conf ×{s.get('confidence_factor',1):.2f} &nbsp; Temp ×{s.get('temporal_factor'
             xaxis=dict(title="Year", dtick=1),
             showlegend=False,
         )
-        st.plotly_chart(fig_tl, use_container_width=True)
+        st.plotly_chart(fig_tl, width="stretch")
 
         for e in timeline:
             icon = "🟢" if e.get("impact") == "positive" else "🔴" if e.get("impact") == "negative" else "⚪"
@@ -463,7 +463,7 @@ def render_financial_health(financials: dict, scoring: dict, company_name: str):
                     number={"suffix": suffix, "font": {"size": 18}},
                 ))
                 fig.update_layout(height=180, margin=dict(t=40, b=5, l=20, r=20))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 st.caption(tip)
             else:
                 st.metric(name, "N/A")
@@ -511,7 +511,7 @@ def render_financial_health(financials: dict, scoring: dict, company_name: str):
             number={"suffix": "/100", "font": {"size": 24}},
         ))
         fig_h.update_layout(height=220, margin=dict(t=40, b=10, l=20, r=20))
-        st.plotly_chart(fig_h, use_container_width=True)
+        st.plotly_chart(fig_h, width="stretch")
 
     with col_h2:
         if breakdown_labels:
@@ -529,7 +529,7 @@ def render_financial_health(financials: dict, scoring: dict, company_name: str):
                 xaxis_title="Health Points",
                 yaxis=dict(autorange="reversed"),
             )
-            st.plotly_chart(fig_bd, use_container_width=True)
+            st.plotly_chart(fig_bd, width="stretch")
 
     # ── Balance Sheet Composition ─────────────────────────────────────── #
     if total_assets > 0 or nw > 0 or debt > 0:
@@ -560,7 +560,7 @@ def render_financial_health(financials: dict, scoring: dict, company_name: str):
                 showlegend=True,
                 legend=dict(orientation="h", y=-0.1),
             )
-            st.plotly_chart(fig_bs, use_container_width=True)
+            st.plotly_chart(fig_bs, width="stretch")
 
     # ── Credit Limit Optimizer Output ─────────────────────────────────── #
     credit_limit = scoring.get("recommendation", {}).get("credit_limit", {})

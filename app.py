@@ -132,7 +132,7 @@ manual_notes = st.text_area(
 )
 
 st.markdown('<div class="section-header">04 / RUN ANALYSIS</div>', unsafe_allow_html=True)
-run_btn = st.button("⚡ Run Credit Analysis", type="primary", use_container_width=True)
+run_btn = st.button("⚡ Run Credit Analysis", type="primary", width="stretch")
 
 # ── Run ──────────────────────────────────────────────────────────────────── #
 if run_btn:
@@ -145,6 +145,10 @@ if run_btn:
 
     st.session_state["company_name"]  = company_name
     st.session_state["manual_notes"]  = manual_notes
+    st.session_state["promoters"]     = promoters
+    st.session_state["sector"]        = sector
+    st.session_state["loan_amount"]   = loan_amount
+    st.session_state["loan_purpose"]  = loan_purpose
 
     log_placeholder = st.empty()
     log_lines: list[str] = []
@@ -355,6 +359,10 @@ if st.session_state.get("analysis_done"):
     cam_path = st.session_state.get("cam_path",        "")
     cname    = st.session_state.get("company_name",    "")
     mnotes   = st.session_state.get("manual_notes",    "")
+    sector_v = st.session_state.get("sector",          "Other")
+    promoters_v = st.session_state.get("promoters",    "")
+    loan_amount_v = st.session_state.get("loan_amount", "")
+    loan_purpose_v = st.session_state.get("loan_purpose", "")
 
     rec        = sr.get("recommendation", {})
     risk_score = sr.get("risk_score",     {})
@@ -650,16 +658,42 @@ if st.session_state.get("analysis_done"):
     st.caption("Add new field observations to instantly re-score without re-running full analysis")
     new_notes = st.text_area("Updated field observations", value=mnotes, height=80, key="new_notes_input")
     if st.button("🔄 Re-Score with New Notes", key="rescore_btn"):
-        sa_ref = st.session_state.get("scoring_agent_ref")
-        if sa_ref:
-            with st.spinner("Re-scoring..."):
-                upd = sa_ref.adjust_for_manual_notes(new_notes)
+        with st.spinner("Re-scoring..."):
+            try:
+                from agents.scoring_agent import ScoringAgent
+
+                # Rebuild agent from session data so re-score never depends on stale object state.
+                entity_type = fin.get("_entity_type", "corporate")
+                sa_ref = ScoringAgent(
+                    company_name=cname,
+                    financials=fin,
+                    research=research,
+                    manual_notes=new_notes,
+                    loan_purpose=loan_purpose_v,
+                    entity_type=entity_type,
+                )
+
+                upd = sa_ref.run()
+
+                # Keep ML blend parity with the primary run if ML output exists.
+                if ml_results and upd:
+                    blend_rec = sa_ref.generate_recommendation(
+                        upd.get("five_cs", {}),
+                        upd.get("risk_score", {}),
+                        ml_results=ml_results,
+                    )
+                    upd["recommendation"] = blend_rec
+                    upd["blend_applied"] = True
+
+                st.session_state["scoring_agent_ref"] = sa_ref
                 st.session_state["scoring_results"] = upd
-            ur  = upd.get("recommendation",{})
-            st.success(f"✅ Re-scored: {ur.get('final_score',0)}/100 | {ur.get('rating','N/A')} | {ur.get('decision','N/A')}")
-            st.rerun()
-        else:
-            st.error("No scoring agent in session. Please re-run analysis.")
+                st.session_state["manual_notes"] = new_notes
+
+                ur = upd.get("recommendation", {})
+                st.success(f"✅ Re-scored: {ur.get('final_score', 0)}/100 | {ur.get('rating', 'N/A')} | {ur.get('decision', 'N/A')}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Re-score failed: {e}")
 
     # ── Download ─────────────────────────────────────────────────────────── #
     st.markdown("---")
@@ -671,8 +705,80 @@ if st.session_state.get("analysis_done"):
                 data=fh.read(),
                 file_name=os.path.basename(cam_path),
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
+                width="stretch",
             )
+
+    # Full-screen export bundle for all tab data and raw artifacts.
+    full_export = {
+        "generated_at": datetime.now().isoformat(),
+        "inputs": {
+            "company_name": cname,
+            "sector": sector_v,
+            "promoters": promoters_v,
+            "loan_amount_crores": loan_amount_v,
+            "loan_purpose": loan_purpose_v,
+            "manual_notes": st.session_state.get("manual_notes", ""),
+        },
+        "summary": {
+            "final_score": score,
+            "rating": rating,
+            "decision": decision,
+            "recommended_amount_crores": amount,
+            "interest_rate_percent": rate,
+            "tenure_months": tenure,
+        },
+        "tabs": {
+            "command_center": {
+                "recommendation": rec,
+                "risk_score": risk_score,
+                "five_cs": five_cs,
+            },
+            "risk_intelligence": {
+                "risk_signals_detail": rec.get("risk_signals_detail", []),
+                "fraud_signals": rec.get("fraud_signals", []),
+                "fraud_risk_level": rec.get("fraud_risk_level", "LOW"),
+                "risk_timeline": rec.get("risk_timeline", []),
+            },
+            "financial_health": fin,
+            "company_financials": fin,
+            "cross_reference": xref,
+            "research_intelligence": research,
+            "risk_signals": {
+                "top_risks": research.get("overall_sentiment", {}).get("top_risks", []),
+                "red_flags": fin.get("red_flags", {}),
+                "penalty_applied": risk_score.get("penalty_applied", 0),
+            },
+            "decision_rationale": {
+                "decision": decision,
+                "decision_rationale": rec.get("decision_rationale"),
+                "key_conditions": rec.get("key_conditions", []),
+                "score_breakdown": risk_score.get("score_breakdown", {}),
+            },
+            "ml_intelligence": {
+                "ml_results": ml_results,
+                "databricks_audit": db_audit,
+            },
+            "a2a_protocol": {
+                "enabled": True,
+                "endpoint": "http://localhost:5000/a2a",
+                "agent_card": "/.well-known/agent.json",
+            },
+        },
+        "processing_log": st.session_state.get("log_lines", []),
+        "raw_agent_output": {
+            "financial_extraction": fin,
+            "cross_reference": xref,
+            "research": research,
+            "scoring": sr,
+        },
+    }
+    st.download_button(
+        label="📦 Download Full Analysis (.json)",
+        data=json.dumps(full_export, indent=2, ensure_ascii=True),
+        file_name=f"{cname.replace(' ', '_').lower() or 'credit_analysis'}_full_output.json",
+        mime="application/json",
+        width="stretch",
+    )
 
     # ── Live Processing Log (persisted) ──────────────────────────────────── #
     st.markdown("---")
