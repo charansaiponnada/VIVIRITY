@@ -115,13 +115,19 @@ class IngestorAgent:
                 if ext == ".json":
                     data = self._ingest_json(path)
                     doc_type = data.pop("_doc_type", "gst_filing")
-                    results[doc_type] = data
+                    if doc_type in results and isinstance(results.get(doc_type), dict):
+                        results[doc_type] = self._merge_document_data(results[doc_type], data, doc_type)
+                    else:
+                        results[doc_type] = data
                     self.log(f"→ Ingested structured JSON as {doc_type.upper().replace('_',' ')}")
                     continue
                 elif ext == ".csv":
                     data = self._ingest_csv(path)
                     doc_type = data.pop("_doc_type", "bank_statement")
-                    results[doc_type] = data
+                    if doc_type in results and isinstance(results.get(doc_type), dict):
+                        results[doc_type] = self._merge_document_data(results[doc_type], data, doc_type)
+                    else:
+                        results[doc_type] = data
                     self.log(f"→ Ingested structured CSV as {doc_type.upper().replace('_',' ')}")
                     continue
 
@@ -141,7 +147,11 @@ class IngestorAgent:
                     if not extracted.get("cin"):
                         extracted["cin"] = self._extract_cin_regex(pdf, path)
 
-                    results[doc_type] = extracted
+                    if doc_type in results and isinstance(results.get(doc_type), dict):
+                        results[doc_type] = self._merge_document_data(results[doc_type], extracted, doc_type)
+                        self.log(f"→ Merged with existing {doc_type.upper().replace('_',' ')} extraction")
+                    else:
+                        results[doc_type] = extracted
                     self.log(f"→ Extraction complete")
 
             except Exception as e:
@@ -150,6 +160,81 @@ class IngestorAgent:
         doc_types = ", ".join(results.keys()) if results else "none"
         self.log(f"Ingestion complete. Documents: {doc_types}. Financial pages extracted.")
         return results
+
+    # ------------------------------------------------------------------ #
+    def _merge_document_data(self, base: dict, incoming: dict, doc_type: str) -> dict:
+        """Merge duplicate doc-type extractions without dropping previously extracted fields."""
+        if not isinstance(base, dict):
+            return incoming or {}
+        if not isinstance(incoming, dict):
+            return base
+
+        merged = dict(base)
+
+        def _is_missing(v):
+            return v is None or (isinstance(v, str) and v.strip().lower() in {"", "n/a", "na", "none", "null"})
+
+        def _to_float(v):
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        numeric_keys = {
+            "revenue_crores",
+            "profit_after_tax_crores",
+            "ebitda_crores",
+            "total_assets_crores",
+            "net_worth_crores",
+            "total_borrowings_crores",
+            "interest_coverage_ratio",
+            "debt_equity_ratio",
+            "current_ratio",
+        }
+
+        for k, v in incoming.items():
+            if k == "red_flags":
+                rf = dict(merged.get("red_flags", {}))
+                for rk, rv in (v or {}).items():
+                    if rv:
+                        rf[rk] = rv
+                merged["red_flags"] = rf
+                continue
+
+            if isinstance(v, list):
+                existing = merged.get(k, [])
+                if not isinstance(existing, list):
+                    existing = []
+                seen = set(str(x).strip().lower() for x in existing)
+                for item in v:
+                    key = str(item).strip().lower()
+                    if key not in seen:
+                        existing.append(item)
+                        seen.add(key)
+                merged[k] = existing
+                continue
+
+            current = merged.get(k)
+            if _is_missing(current) and not _is_missing(v):
+                merged[k] = v
+                continue
+
+            # For key financial metrics, prefer larger plausible absolute values
+            # so a sparse supplemental file does not overwrite a richer extraction.
+            if k in numeric_keys and not _is_missing(current) and not _is_missing(v):
+                c_num = _to_float(current)
+                v_num = _to_float(v)
+                if c_num is not None and v_num is not None and v_num > c_num:
+                    merged[k] = v
+                continue
+
+            if _is_missing(current) and not _is_missing(v):
+                merged[k] = v
+
+        merged.setdefault("_merge_count", 1)
+        merged["_merge_count"] = int(merged.get("_merge_count", 1)) + 1
+        merged["_merged_doc_type"] = doc_type
+        return merged
 
     # ------------------------------------------------------------------ #
     def _ingest_json(self, path: str) -> dict:

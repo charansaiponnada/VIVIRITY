@@ -357,15 +357,31 @@ if run_btn:
     set_agent("Cross-Reference", "running")
     try:
         from agents.cross_reference_agent import CrossReferenceAgent
-        if len(financials) >= 2:
+        available_doc_types = set(financials.keys())
+        comparable_pairs = [
+            {"annual_report", "gst_filing"},
+            {"annual_report", "bank_statement"},
+            {"annual_report", "itr_filing"},
+            {"itr_filing", "bank_statement"},
+            {"gst_filing", "bank_statement"},
+        ]
+        can_cross_reference = any(pair.issubset(available_doc_types) for pair in comparable_pairs)
+
+        if can_cross_reference:
             cross_ref = CrossReferenceAgent(documents=financials).run()
         else:
+            uploaded_count = len(uploaded_files) if uploaded_files else 0
+            docs_list = ", ".join(sorted(available_doc_types)) if available_doc_types else "none"
+            reason = (
+                f"Cross-reference skipped: uploaded {uploaded_count} file(s), but comparable sources were not available "
+                f"after classification (detected: {docs_list}). Upload any pair among annual report, GST filing, ITR filing, or bank statement."
+            )
             cross_ref = {
                 "cross_reference_performed": False,
-                "reason": "Single document uploaded — cross-reference skipped. Upload GST filing or bank statement alongside annual report for fraud detection.",
+                "reason": reason,
                 "flags": [], "circular_trading_risk": "Unknown", "revenue_inflation_risk": "Unknown",
             }
-            log("Single document uploaded — cross-reference skipped. Upload GST filing or bank statement alongside annual report for fraud detection.", "warning")
+            log(reason, "warning")
         st.session_state["cross_ref"] = cross_ref
         set_agent("Cross-Reference", "done")
     except Exception as e:
