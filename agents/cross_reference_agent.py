@@ -7,6 +7,7 @@ from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
 
 load_dotenv()
+OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _gemini_with_retry(client, model: str, contents,
@@ -229,6 +230,8 @@ class CrossReferenceAgent:
         return None
 
     def _ai_cross_reference(self) -> list[dict]:
+        if OPTIMIZED_API_FLOW:
+            return []
         try:
             doc_summary = json.dumps({
                 k: {kk: vv for kk, vv in v.items() if kk in [

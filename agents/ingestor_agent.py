@@ -18,6 +18,7 @@ from agents.document_classifier import DocumentClassifier
 from utils.indian_context import deduplicate_persons
 
 load_dotenv()
+OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _gemini_with_retry(client, model: str, contents,
@@ -418,6 +419,45 @@ class IngestorAgent:
             if in_b: balance_pages.append(pn)
             if in_i or not in_b: income_pages.append(pn)
 
+        if OPTIMIZED_API_FLOW:
+            unified_text, unified_tables = self._extract_pages(pdf, targeted[:90])
+            self.log("→ Optimized extraction: unified annual-report pass (Gemini call 1/1)...")
+            merged = self._ai_extract_unified_financials(unified_text, unified_tables, entity_type)
+            time.sleep(2)
+
+            merged_dirs = deduplicate_persons(merged.get("directors", []) or [])
+            merged["directors"] = merged_dirs
+            merged_prom = deduplicate_persons(merged.get("promoters", []) or [])
+            if merged_prom:
+                merged["promoters"] = merged_prom
+
+            missing_critical = (
+                not is_financial and (
+                    merged.get("finance_cost_crores") is None or
+                    merged.get("total_borrowings_crores") is None or
+                    merged.get("depreciation_crores") is None
+                )
+            )
+            if missing_critical and page_count > 220:
+                self.log("→ Optimized fallback: targeted notes extraction (Gemini call +1)...")
+                notes_range = list(range(170, min(380, page_count)))
+                notes_pages = [pn for pn in notes_range if any(pn in section_ranges.get(s, []) for s in ["notes", "ebitda", "debt", "cash_flow"])]
+                if len(notes_pages) < 12:
+                    notes_pages = notes_range[::4][:20]
+                if notes_pages:
+                    notes_text, notes_tables = self._extract_pages(pdf, notes_pages[:24])
+                    notes_data = self._ai_extract_notes(notes_text, notes_tables)
+                    for key in ["finance_cost_crores", "depreciation_crores", "total_borrowings_crores",
+                                "long_term_borrowings_crores", "short_term_borrowings_crores",
+                                "operating_cash_flow_crores", "capex_crores", "total_assets_crores",
+                                "current_assets_crores", "current_liabilities_crores"]:
+                        if merged.get(key) is None and notes_data.get(key) is not None:
+                            merged[key] = notes_data[key]
+
+            merged["extraction_method"] = "VectorLess RAG — Unified optimized extraction"
+            merged = self._normalize_currency_and_debt_signals(merged, unified_text)
+            return merged
+
         income_text,  income_tables  = self._extract_pages(pdf, income_pages[:65])
         balance_text, balance_tables = self._extract_pages(pdf, balance_pages[:65])
 
@@ -523,6 +563,78 @@ class IngestorAgent:
         merged["extraction_method"] = "VectorLess RAG — Split two-call + notes extraction"
         merged = self._normalize_currency_and_debt_signals(merged, income_text + "\n" + balance_text)
         return merged
+
+    # ------------------------------------------------------------------ #
+    def _ai_extract_unified_financials(self, text: str, tables_str: str, entity_type: str) -> dict:
+        """Single-call extraction path used in optimized mode to reduce API calls."""
+        profile = "banking_or_financial" if entity_type in ("bank", "nbfc", "insurance") else "corporate"
+        prompt = f"""
+You are a senior Indian credit analyst. Extract financial appraisal data from annual report content.
+
+Entity profile: {profile}
+Rules:
+- Prefer INR crore values. If both USD million and INR crore are present, choose INR crore.
+- Prefer consolidated numbers over standalone.
+- Extract only values that are explicit in text/tables.
+
+Text:
+{text[:17000]}
+
+Tables:
+{tables_str[:7000]}
+
+Return ONLY valid JSON. No markdown.
+{{
+    "company_name": null,
+    "cin": null,
+    "fiscal_year": null,
+    "directors": [],
+    "promoters": [],
+    "revenue_crores": null,
+    "profit_after_tax_crores": null,
+    "profit_before_tax_crores": null,
+    "ebitda_crores": null,
+    "ebitda_margin_percent": null,
+    "depreciation_crores": null,
+    "finance_cost_crores": null,
+    "operating_cash_flow_crores": null,
+    "capex_crores": null,
+    "total_assets_crores": null,
+    "total_liabilities_crores": null,
+    "current_assets_crores": null,
+    "current_liabilities_crores": null,
+    "net_worth_crores": null,
+    "share_capital_crores": null,
+    "reserves_crores": null,
+    "total_borrowings_crores": null,
+    "long_term_borrowings_crores": null,
+    "short_term_borrowings_crores": null,
+    "cash_and_equivalents_crores": null,
+    "trade_receivables_crores": null,
+    "inventories_crores": null,
+    "debt_equity_ratio": null,
+    "current_ratio": null,
+    "interest_coverage_ratio": null,
+    "return_on_equity_percent": null,
+    "return_on_assets_percent": null,
+    "external_credit_rating": null,
+    "red_flags": {{
+        "audit_qualified": false,
+        "going_concern_issue": false,
+        "npa_mention": false,
+        "related_party_concerns": false
+    }},
+    "extraction_notes": ""
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            result = self._parse_json(raw)
+            return result if not result.get("parse_error") else {"red_flags": {}}
+        except Exception as e:
+            print(f"[Ingestor] Unified extraction error: {e}")
+            return {"red_flags": {}}
 
     # ------------------------------------------------------------------ #
     def _enrich_external_rating_from_text(self, pdf, data: dict) -> dict:

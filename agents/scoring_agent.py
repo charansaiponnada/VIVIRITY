@@ -23,6 +23,7 @@ from core.risk_engine import (
 )
 
 load_dotenv()
+OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _gemini_with_retry(client, model: str, contents,
@@ -377,7 +378,24 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # FIX #8 — dynamic tenure based on loan purpose
         tenure = self._dynamic_tenure()
 
-        prompt = f"""
+        if OPTIMIZED_API_FLOW:
+            rationale = (
+                f"Blended score {final_score}/100 with rating {rating}. "
+                f"Five-Cs weighted score after penalties: {risk_score.get('final_score', final_score)}. "
+                f"Entity type assessed as {self.entity_type}. "
+                f"Recommendation is {decision} based on calibrated thresholds and policy floors."
+            )
+            result = {
+                "decision": decision,
+                "decision_rationale": rationale,
+                "recommended_amount_crores": amount,
+                "interest_rate_percent": rate if decision != "REJECT" else None,
+                "tenure_months": tenure if decision != "REJECT" else None,
+                "key_conditions": [],
+                "rejection_reason": "Credit score below minimum threshold." if decision == "REJECT" else None,
+            }
+        else:
+            prompt = f"""
 You are a senior credit officer at Vivriti Capital, {analyst_org}.
 Generate the final lending recommendation for: {self.company_name}
 

@@ -7,6 +7,7 @@ from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
 
 load_dotenv()
+OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 try:
     from tavily import TavilyClient
@@ -135,6 +136,15 @@ class ResearchAgent:
             ],
         }
 
+        if OPTIMIZED_API_FLOW:
+            search_domains = {
+                "company_news": [f"{self.company_name} India latest financial results revenue profit credit rating CRISIL ICRA CARE"],
+                "promoter_background": [f"{self.company_name} promoter background wilful defaulter criminal SFIO India"],
+                "mca_filings": [f"{self.company_name} MCA filing ROC director disqualification charge satisfaction"],
+                "legal_disputes": [f"{self.company_name} NCLT DRT e-courts litigation arbitration IBC CIRP India"],
+                "sector_regulatory": [f"{self.sector} India RBI regulations SEBI action 2025 lending norms"],
+            }
+
         all_results: dict[str, list[str]] = {}
 
         for domain, queries in search_domains.items():
@@ -143,7 +153,7 @@ class ResearchAgent:
                 try:
                     r = self.tavily.search(
                         query=q,
-                        max_results=3,
+                        max_results=2 if OPTIMIZED_API_FLOW else 3,
                         search_depth="basic",
                     )
                     for item in r.get("results", []):
