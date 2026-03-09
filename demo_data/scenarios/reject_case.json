@@ -1,0 +1,99 @@
+{
+  "case_id": "REJECT_001",
+  "expected_decision": "REJECT",
+  "company_name": "Nova Retailmart Private Limited",
+  "sector": "Retail",
+  "promoters": "P. Sethi",
+  "loan_amount_crores": 95,
+  "loan_purpose": "Working capital support",
+  "manual_notes": "Store network at low throughput. Management was evasive and avoided reconciliation questions. Revenue figures appear mismatched across documents.",
+  "financials": {
+    "revenue_crores": 690,
+    "profit_after_tax": -48,
+    "ebitda_crores": 12,
+    "ebitda_margin_percent": 1.7,
+    "total_assets": 560,
+    "net_worth": 58,
+    "total_borrowings": 420,
+    "debt_equity_ratio": 7.2,
+    "current_ratio": 0.76,
+    "interest_coverage_ratio": 0.62,
+    "dscr_approximate": 0.58,
+    "external_credit_rating": "CCC (Negative)",
+    "red_flags": {
+      "audit_qualified": true,
+      "going_concern_issue": true,
+      "npa_mention": true,
+      "low_cibil_score": true,
+      "dpd_90_plus": true,
+      "suit_filed": true,
+      "wilful_default_cibil": false
+    }
+  },
+  "gst_filing": {
+    "gst_turnover_crores": 980,
+    "gstr1_turnover_crores": 1020,
+    "gstr3b_turnover_crores": 890,
+    "gstr2a_itc_crores": 62.3,
+    "gstr3b_itc_claimed_crores": 96.9,
+    "revenue_crores": 980,
+    "red_flags": {
+      "itc_mismatch": true,
+      "show_cause_notice": true
+    }
+  },
+  "itr_filing": {
+    "assessment_year": "2025-26",
+    "total_income_crores": 520,
+    "gross_total_income_crores": 540,
+    "business_income_crores": 498,
+    "tax_paid_crores": 3.1,
+    "tax_payable_crores": 8.6,
+    "revenue_crores": 540,
+    "red_flags": {
+      "itr_tax_mismatch": true
+    }
+  },
+  "bank_statement_summary": {
+    "total_credits_crores": 380,
+    "total_debits_crores": 405,
+    "average_monthly_balance_crores": 1.6,
+    "bounce_count": 14,
+    "revenue_crores": 380,
+    "red_flags": {}
+  },
+  "research": {
+    "company_news": {
+      "sentiment": "Negative",
+      "risk_signals": ["Delayed vendor payments", "Store closures"],
+      "default_mentions": true
+    },
+    "promoter_background": {
+      "reputation": "Poor",
+      "criminal_cases": true,
+      "wilful_defaulter": true,
+      "risk_level": "High"
+    },
+    "mca_signals": {
+      "director_disqualified": true,
+      "filing_defaults": true,
+      "mca_risk": "High"
+    },
+    "legal_disputes": {
+      "nclt_proceedings": true,
+      "nclt_type": "insolvency petition",
+      "drt_cases": true,
+      "ibc_cirp": true,
+      "litigation_risk": "High"
+    },
+    "regulatory": {
+      "sebi_actions": true,
+      "rbi_issues": true,
+      "regulatory_risk": "High"
+    },
+    "cross_reference": {
+      "circular_trading_risk": "High",
+      "revenue_inflation_risk": "High"
+    }
+  }
+}

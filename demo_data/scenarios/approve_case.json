@@ -1,0 +1,85 @@
+{
+  "case_id": "APPROVE_001",
+  "expected_decision": "APPROVE",
+  "company_name": "Aarohan Components Private Limited",
+  "sector": "Auto Components",
+  "promoters": "R. Menon",
+  "loan_amount_crores": 75,
+  "loan_purpose": "Working capital expansion",
+  "manual_notes": "Plant operating above 85% capacity. Management provided complete records and customer contracts.",
+  "financials": {
+    "revenue_crores": 820,
+    "profit_after_tax": 72,
+    "ebitda_crores": 145,
+    "ebitda_margin_percent": 17.7,
+    "total_assets": 940,
+    "net_worth": 360,
+    "total_borrowings": 165,
+    "debt_equity_ratio": 0.46,
+    "current_ratio": 1.58,
+    "interest_coverage_ratio": 4.9,
+    "dscr_approximate": 2.15,
+    "external_credit_rating": "A (Stable)",
+    "red_flags": {}
+  },
+  "gst_filing": {
+    "gst_turnover_crores": 810,
+    "gstr1_turnover_crores": 812,
+    "gstr3b_turnover_crores": 808,
+    "gstr2a_itc_crores": 58.2,
+    "gstr3b_itc_claimed_crores": 57.6,
+    "revenue_crores": 810,
+    "red_flags": {}
+  },
+  "itr_filing": {
+    "assessment_year": "2025-26",
+    "total_income_crores": 805,
+    "gross_total_income_crores": 811,
+    "business_income_crores": 792,
+    "tax_paid_crores": 31.4,
+    "tax_payable_crores": 30.8,
+    "revenue_crores": 811,
+    "red_flags": {}
+  },
+  "bank_statement_summary": {
+    "total_credits_crores": 798,
+    "total_debits_crores": 742,
+    "average_monthly_balance_crores": 21.4,
+    "bounce_count": 0,
+    "revenue_crores": 798,
+    "red_flags": {}
+  },
+  "research": {
+    "company_news": {
+      "sentiment": "Positive",
+      "risk_signals": [],
+      "default_mentions": false
+    },
+    "promoter_background": {
+      "reputation": "Good",
+      "criminal_cases": false,
+      "wilful_defaulter": false,
+      "risk_level": "Low"
+    },
+    "mca_signals": {
+      "director_disqualified": false,
+      "filing_defaults": false,
+      "mca_risk": "Low"
+    },
+    "legal_disputes": {
+      "nclt_proceedings": false,
+      "drt_cases": false,
+      "ibc_cirp": false,
+      "litigation_risk": "Low"
+    },
+    "regulatory": {
+      "sebi_actions": false,
+      "rbi_issues": false,
+      "regulatory_risk": "Low"
+    },
+    "cross_reference": {
+      "circular_trading_risk": "Low",
+      "revenue_inflation_risk": "Low"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "case_id": "COND_APPROVE_001",
+  "expected_decision": "CONDITIONAL_APPROVE",
+  "company_name": "Shakti Buildinfra Limited",
+  "sector": "Infrastructure",
+  "promoters": "K. Agarwal",
+  "loan_amount_crores": 180,
+  "loan_purpose": "Project capex and working capital",
+  "manual_notes": "Factory and project site at around 55% utilization. Management cooperative but receivables aging is elevated.",
+  "financials": {
+    "revenue_crores": 960,
+    "profit_after_tax": 16,
+    "ebitda_crores": 74,
+    "ebitda_margin_percent": 7.7,
+    "total_assets": 1680,
+    "net_worth": 330,
+    "total_borrowings": 690,
+    "debt_equity_ratio": 2.1,
+    "current_ratio": 0.98,
+    "interest_coverage_ratio": 1.26,
+    "dscr_approximate": 1.05,
+    "external_credit_rating": "BBB- (Stable)",
+    "red_flags": {
+      "audit_qualified": false,
+      "low_cibil_score": true
+    }
+  },
+  "gst_filing": {
+    "gst_turnover_crores": 1130,
+    "gstr1_turnover_crores": 1180,
+    "gstr3b_turnover_crores": 1125,
+    "gstr2a_itc_crores": 84.1,
+    "gstr3b_itc_claimed_crores": 90.2,
+    "revenue_crores": 1130,
+    "red_flags": {
+      "itc_mismatch": true
+    }
+  },
+  "itr_filing": {
+    "assessment_year": "2025-26",
+    "total_income_crores": 1160,
+    "gross_total_income_crores": 1178,
+    "business_income_crores": 1115,
+    "tax_paid_crores": 24.0,
+    "tax_payable_crores": 26.5,
+    "revenue_crores": 1178,
+    "red_flags": {}
+  },
+  "bank_statement_summary": {
+    "total_credits_crores": 905,
+    "total_debits_crores": 896,
+    "average_monthly_balance_crores": 9.8,
+    "bounce_count": 3,
+    "revenue_crores": 905,
+    "red_flags": {}
+  },
+  "research": {
+    "company_news": {
+      "sentiment": "Mixed",
+      "risk_signals": ["Working capital pressure in sector"],
+      "default_mentions": false
+    },
+    "promoter_background": {
+      "reputation": "Moderate",
+      "criminal_cases": true,
+      "wilful_defaulter": false,
+      "risk_level": "Medium"
+    },
+    "mca_signals": {
+      "director_disqualified": false,
+      "filing_defaults": true,
+      "mca_risk": "Medium"
+    },
+    "legal_disputes": {
+      "nclt_proceedings": true,
+      "nclt_type": "operational creditor petition",
+      "drt_cases": true,
+      "ibc_cirp": false,
+      "litigation_risk": "Medium"
+    },
+    "regulatory": {
+      "sebi_actions": false,
+      "rbi_issues": false,
+      "regulatory_risk": "Medium"
+    },
+    "cross_reference": {
+      "circular_trading_risk": "Medium",
+      "revenue_inflation_risk": "High"
+    }
+  }
+}
