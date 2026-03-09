@@ -105,7 +105,7 @@ with col_l:
     uploaded_files = st.file_uploader(
         "Upload all available documents for the company",
         type=["pdf", "json", "csv"], accept_multiple_files=True,
-        help="Annual Reports (PDF), GST Returns (PDF/JSON), Bank Statements (PDF/CSV), Legal Notices, Rating Reports",
+        help="Annual Reports (PDF), GST Returns (PDF/JSON), ITR (PDF/JSON), Bank Statements (PDF/CSV), Legal Notices, Sanction Letters, Rating Reports",
     )
     if uploaded_files:
         st.caption(f"✅ {len(uploaded_files)} file(s) uploaded")

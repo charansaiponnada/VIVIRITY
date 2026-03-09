@@ -241,12 +241,21 @@ Open `http://localhost:8501`
 
 ## Usage
 
-1. **Upload documents** — Annual report, GST filings, bank statements (multiple files enable cross-referencing)
+1. **Upload documents** — Annual report, GST filings, ITR filings, bank statements, legal notices, sanction letters (multiple files enable cross-referencing)
 2. **Enter company details** — Name, promoters, sector, loan amount and purpose
 3. **Add field notes** — Qualitative observations from site visits or management interviews
 4. **Run analysis** — All 6 agents execute sequentially, status visible in sidebar
 5. **Review results** — Five Cs scores, cross-reference findings, research intelligence, decision rationale
-6. **Download CAM** — Professional Word document ready for approval committee
+6. **Download CAM** — Professional Word/PDF CAM ready for approval committee (PDF available when conversion runtime is available)
+
+### Demo Cases
+
+- Scenario payloads are available in `demo_data/scenarios/` for:
+    - `APPROVE`
+    - `CONDITIONAL_APPROVE`
+    - `REJECT`
+- Realtime synthetic stream generator: `demo_data/generate_realtime_stream.py`
+- Usage guide: `demo_data/README_DEMO_CASES.md`
 
 ---
 
