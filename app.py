@@ -98,6 +98,98 @@ def set_agent(name, status):
     icon = {"pending":"⚪","running":"🔄","done":"✅","error":"❌"}.get(status,"⚪")
     agent_placeholders[name].markdown(f"{icon} {name}")
 
+
+def _is_missing(val):
+    if val is None:
+        return True
+    if isinstance(val, str) and val.strip().lower() in {"", "none", "null", "n/a", "na"}:
+        return True
+    return False
+
+
+def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, company_name: str) -> tuple[dict, list[str], dict]:
+    """Backfill missing primary financial fields from structured docs and research signals."""
+    fin = dict(primary_fin or {})
+    all_docs = all_docs or {}
+    research = research or {}
+    backfilled = []
+    source_map = {}
+
+    # Tag fields already present in primary extraction as annual_report sourced.
+    tracked_fields = [
+        "revenue_crores",
+        "profit_after_tax_crores",
+        "ebitda_crores",
+        "debt_equity_ratio",
+        "current_ratio",
+        "net_worth_crores",
+        "external_credit_rating",
+        "company_name",
+    ]
+    for f in tracked_fields:
+        if not _is_missing(fin.get(f)):
+            source_map[f] = "annual_report"
+
+    # Normalize alternate key names to app/scoring canonical keys.
+    alias_map = {
+        "profit_after_tax_crores": ["profit_after_tax", "pat_crores", "pat"],
+        "net_worth_crores": ["net_worth", "shareholders_funds_crores", "total_equity_crores"],
+        "total_borrowings_crores": ["total_borrowings", "borrowings"],
+        "revenue_crores": ["revenue", "total_income", "turnover"],
+    }
+    for canonical, aliases in alias_map.items():
+        if _is_missing(fin.get(canonical)):
+            for a in aliases:
+                if not _is_missing(fin.get(a)):
+                    fin[canonical] = fin.get(a)
+                    backfilled.append(f"{canonical}<-{a}")
+                    source_map[canonical] = f"annual_report:{a}"
+                    break
+
+    # Pull from supporting structured docs when annual-report extraction is sparse.
+    gst = all_docs.get("gst_filing", {})
+    itr = all_docs.get("itr_filing", {})
+    bank = all_docs.get("bank_statement", {})
+
+    if _is_missing(fin.get("revenue_crores")):
+        for source_name, source_doc, key in [
+            ("gst_filing", gst, "revenue_crores"),
+            ("itr_filing", itr, "revenue_crores"),
+            ("bank_statement", bank, "revenue_crores"),
+        ]:
+            if not _is_missing(source_doc.get(key)):
+                fin["revenue_crores"] = source_doc.get(key)
+                backfilled.append(f"revenue_crores<-{source_name}.{key}")
+                source_map["revenue_crores"] = source_name
+                break
+
+    # Derive D/E if not present but components exist.
+    if _is_missing(fin.get("debt_equity_ratio")):
+        try:
+            debt = float(fin.get("total_borrowings_crores"))
+            nw = float(fin.get("net_worth_crores"))
+            if nw > 0:
+                fin["debt_equity_ratio"] = round(debt / nw, 2)
+                backfilled.append("debt_equity_ratio<-computed")
+                source_map["debt_equity_ratio"] = "computed"
+        except Exception:
+            pass
+
+    # Research can contribute rating when financial extraction misses it.
+    if _is_missing(fin.get("external_credit_rating")):
+        ext_rating = research.get("external_credit_rating") or research.get("company_news", {}).get("external_credit_rating")
+        if not _is_missing(ext_rating):
+            fin["external_credit_rating"] = ext_rating
+            backfilled.append("external_credit_rating<-research")
+            source_map["external_credit_rating"] = "research"
+
+    # Keep company name populated in summary even if parser missed identity fields.
+    if _is_missing(fin.get("company_name")) and company_name:
+        fin["company_name"] = company_name
+        source_map["company_name"] = "manual_input"
+
+    return fin, backfilled, source_map
+
 # ── Inputs ───────────────────────────────────────────────────────────────── #
 col_l, col_r = st.columns([1.2, 1])
 with col_l:
@@ -216,6 +308,7 @@ if run_btn:
         log(f"Entity detection fallback to CORPORATE: {e}", "warning")
 
     st.session_state["financials"] = primary_fin
+    st.session_state["financials_all"] = financials
 
     # ── Cross-reference ───────────────────────────────────────────────────── #
     set_agent("Cross-Reference", "running")
@@ -244,6 +337,11 @@ if run_btn:
     try:
         from agents.research_agent import ResearchAgent
         research = ResearchAgent(company_name=company_name, sector=sector, promoters=promoters).run()
+        primary_fin, backfilled_fields, fin_source_map = _enrich_financials(primary_fin, financials, research, company_name)
+        st.session_state["financials"] = primary_fin
+        st.session_state["financials_source_map"] = fin_source_map
+        if backfilled_fields:
+            log(f"Backfilled financial fields: {', '.join(backfilled_fields)}", "info")
         st.session_state["research"] = research
         log("Web research and synthesis complete", "success")
         set_agent("Research Agent", "done")
@@ -359,6 +457,7 @@ if st.session_state.get("analysis_done"):
     cam_path = st.session_state.get("cam_path",        "")
     cname    = st.session_state.get("company_name",    "")
     mnotes   = st.session_state.get("manual_notes",    "")
+    fin_source_map = st.session_state.get("financials_source_map", {})
     sector_v = st.session_state.get("sector",          "Other")
     promoters_v = st.session_state.get("promoters",    "")
     loan_amount_v = st.session_state.get("loan_amount", "")
@@ -484,10 +583,15 @@ if st.session_state.get("analysis_done"):
 
     with tab4:
         entity_type = fin.get("_entity_type", "corporate")
+
+        def with_source(label: str, value: str, key: str) -> str:
+            src = fin_source_map.get(key, "unknown")
+            return f"**{label}:** {value}  `[{src}]`"
+
         a,b = st.columns(2)
         with a:
             st.markdown("**Company Info**")
-            st.write(f"**Name:** {fin.get('company_name', cname)}")
+            st.write(with_source("Name", fin.get('company_name', cname), "company_name"))
             st.write(f"**CIN:** {fin.get('cin','N/A')}")
             st.write(f"**Entity Type:** {str(entity_type).upper()}")
             try:
@@ -499,13 +603,13 @@ if st.session_state.get("analysis_done"):
                 promoters_view = fin.get("promoters",[]) or []
             dirs_str = ", ".join([d.get("name",str(d)) if isinstance(d,dict) else str(d) for d in dirs]) or "N/A"
             st.write(f"**Directors:** {dirs_str}")
-            promoters_str = ", ".join([p.get("name",str(p)) if isinstance(p,dict) else str(p) for p in promoters_view]) or "N/A"
+            promoters_str = ", ".join([p.get("name",str(p)) if isinstance(p,dict) else str(p) for p in promoters_view]) or (promoters_v or "N/A")
             st.write(f"**Promoters:** {promoters_str}")
         with b:
             st.markdown("**Key Financials**")
             revenue_label = "Total Income" if entity_type in ("bank", "nbfc") else "Gross Premium" if entity_type == "insurance" else "Revenue"
-            st.write(f"**{revenue_label}:** {fmt_cr(fin.get('revenue_crores'))}")
-            st.write(f"**PAT:** {fmt_cr(fin.get('profit_after_tax_crores'))}")
+            st.write(with_source(revenue_label, fmt_cr(fin.get('revenue_crores')), "revenue_crores"))
+            st.write(with_source("PAT", fmt_cr(fin.get('profit_after_tax_crores')), "profit_after_tax_crores"))
 
             if entity_type in ("bank", "nbfc"):
                 st.write(f"**NII:** {fmt_cr(fin.get('net_interest_income_crores'))}")
@@ -517,11 +621,12 @@ if st.session_state.get("analysis_done"):
                 st.write(f"**Claims Ratio:** {fmt_val(fin.get('claims_ratio_percent'), '%')}")
                 st.write(f"**Combined Ratio:** {fmt_val(fin.get('combined_ratio_percent'), '%')}")
             else:
-                st.write(f"**EBITDA:** {fmt_cr(fin.get('ebitda_crores'))}")
-                st.write(f"**D/E Ratio:** {fmt_val(fin.get('debt_equity_ratio'), 'x')}")
-                st.write(f"**Current Ratio:** {fmt_val(fin.get('current_ratio'), 'x')}")
+                st.write(with_source("EBITDA", fmt_cr(fin.get('ebitda_crores')), "ebitda_crores"))
+                st.write(with_source("D/E Ratio", fmt_val(fin.get('debt_equity_ratio'), 'x'), "debt_equity_ratio"))
+                st.write(with_source("Current Ratio", fmt_val(fin.get('current_ratio'), 'x'), "current_ratio"))
 
-            st.write(f"**Net Worth:** {fmt_cr(fin.get('net_worth_crores'))}")
+            st.write(with_source("Net Worth", fmt_cr(fin.get('net_worth_crores')), "net_worth_crores"))
+            st.write(with_source("External Rating", fin.get('external_credit_rating') or research.get('external_credit_rating') or 'N/A', "external_credit_rating"))
 
     with tab5:
         if xref.get("cross_reference_performed"):
