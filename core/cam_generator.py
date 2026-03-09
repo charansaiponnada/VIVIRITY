@@ -9,6 +9,12 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from utils.indian_context import deduplicate_persons, get_cam_financial_rows
 
+try:
+    from docx2pdf import convert as docx2pdf_convert
+    DOCX2PDF_AVAILABLE = True
+except Exception:
+    DOCX2PDF_AVAILABLE = False
+
 
 def _set_cell_bg(cell, hex_color: str):
     """Set table cell background colour."""
@@ -42,6 +48,7 @@ class CAMGenerator:
     def __init__(self, output_dir: str = "outputs"):
         os.makedirs(output_dir, exist_ok=True)
         self.output_dir = output_dir
+        self.last_pdf_path: str | None = None
 
     # ================================================================== #
     def generate(
@@ -78,8 +85,23 @@ class CAMGenerator:
         filename  = f"CAM_{safe_name}_{timestamp}.docx"
         filepath  = os.path.join(self.output_dir, filename)
         doc.save(filepath)
+        self.last_pdf_path = self._try_export_pdf(filepath)
         print(f"[CAMGenerator] CAM generated: {filepath}")
+        if self.last_pdf_path:
+            print(f"[CAMGenerator] CAM PDF generated: {self.last_pdf_path}")
         return filepath
+
+    def _try_export_pdf(self, docx_path: str) -> str | None:
+        """Attempt DOCX to PDF conversion; returns PDF path if successful."""
+        if not DOCX2PDF_AVAILABLE:
+            return None
+        try:
+            pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
+            docx2pdf_convert(docx_path, pdf_path)
+            return pdf_path if os.path.exists(pdf_path) else None
+        except Exception as e:
+            print(f"[CAMGenerator] PDF conversion skipped: {e}")
+            return None
 
     # ================================================================== #
     def _set_page_margins(self, doc):

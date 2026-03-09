@@ -708,6 +708,17 @@ if st.session_state.get("analysis_done"):
                 width="stretch",
             )
 
+        pdf_path = os.path.splitext(cam_path)[0] + ".pdf"
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as fh:
+                st.download_button(
+                    label="📕 Download CAM (.pdf)",
+                    data=fh.read(),
+                    file_name=os.path.basename(pdf_path),
+                    mime="application/pdf",
+                    width="stretch",
+                )
+
     # Full-screen export bundle for all tab data and raw artifacts.
     full_export = {
         "generated_at": datetime.now().isoformat(),

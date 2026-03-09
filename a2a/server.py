@@ -274,7 +274,7 @@ def _execute_orchestrator(task: Task) -> Task:
         message=create_agent_message("Generating Credit Appraisal Memo..."))
     try:
         from agents.cam_agent import CAMAgent
-        cam_path = CAMAgent(
+        cam_agent = CAMAgent(
             company_name=company_name, financials=primary_fin,
             research=results.get("research", {}),
             scoring=results.get("scoring", {}),
@@ -282,13 +282,20 @@ def _execute_orchestrator(task: Task) -> Task:
             manual_notes=manual_notes,
             loan_amount=loan_amount, loan_purpose=loan_purpose,
             output_dir="outputs",
-        ).run()
+        )
+        cam_path = cam_agent.run()
         results["cam_path"] = cam_path
         task_manager.add_artifact(task.id, Artifact(
             name="cam_document",
             parts=[{"type": "file", "file_uri": cam_path, "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}],
             description="Credit Appraisal Memorandum",
         ))
+        if cam_agent.pdf_path:
+            task_manager.add_artifact(task.id, Artifact(
+                name="cam_document_pdf",
+                parts=[{"type": "file", "file_uri": cam_agent.pdf_path, "mime_type": "application/pdf"}],
+                description="Credit Appraisal Memorandum (PDF)",
+            ))
     except Exception as e:
         results["cam_path"] = ""
 
@@ -407,7 +414,7 @@ def _execute_scoring(task: Task) -> Task:
 def _execute_cam(task: Task) -> Task:
     metadata = _get_task_metadata(task)
     from agents.cam_agent import CAMAgent
-    cam_path = CAMAgent(
+    cam_agent = CAMAgent(
         company_name=metadata.get("company_name", ""),
         financials=metadata.get("financials", {}),
         research=metadata.get("research", {}),
@@ -417,12 +424,19 @@ def _execute_cam(task: Task) -> Task:
         loan_amount=metadata.get("loan_amount", ""),
         loan_purpose=metadata.get("loan_purpose", ""),
         output_dir="outputs",
-    ).run()
+    )
+    cam_path = cam_agent.run()
     task_manager.add_artifact(task.id, Artifact(
         name="cam_document",
         parts=[{"type": "file", "file_uri": cam_path}],
         description="Credit Appraisal Memorandum",
     ))
+    if cam_agent.pdf_path:
+        task_manager.add_artifact(task.id, Artifact(
+            name="cam_document_pdf",
+            parts=[{"type": "file", "file_uri": cam_agent.pdf_path, "mime_type": "application/pdf"}],
+            description="Credit Appraisal Memorandum (PDF)",
+        ))
     task_manager.update_status(task.id, TaskState.COMPLETED,
         message=create_agent_message(f"CAM generated: {cam_path}"))
     return task_manager.get_task(task.id)

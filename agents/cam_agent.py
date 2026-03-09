@@ -23,10 +23,11 @@ class CAMAgent:
         self.loan_amount  = loan_amount
         self.loan_purpose = loan_purpose
         self.output_dir   = output_dir
+        self.pdf_path: str | None = None
 
     def run(self) -> str:
         generator = CAMGenerator(output_dir=self.output_dir)
-        return generator.generate(
+        docx_path = generator.generate(
             company_name  = self.company_name,
             financials    = self.financials,
             research      = self.research,
@@ -36,3 +37,5 @@ class CAMAgent:
             loan_amount   = self.loan_amount,
             loan_purpose  = self.loan_purpose,
         )
+        self.pdf_path = generator.last_pdf_path
+        return docx_path
