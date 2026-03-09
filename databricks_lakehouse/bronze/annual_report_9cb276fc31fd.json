@@ -1,0 +1,49 @@
+{
+  "record_id": "9cb276fc31fd",
+  "company_name": "INFOSYS LIMITED",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-09T11:09:36.131321",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.22,
+  "cin": null,
+  "directors": [
+    {
+      "name": "Jayesh Sanghrajka",
+      "role": "Chief Financial Officer"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": 2025,
+  "revenue_crores": null,
+  "revenue_growth_percent": null,
+  "profit_after_tax_crores": null,
+  "profit_before_tax_crores": null,
+  "ebitda_crores": null,
+  "ebitda_margin_percent": null,
+  "depreciation_crores": 569,
+  "finance_cost_crores": 49,
+  "operating_cash_flow_crores": 4351,
+  "capex_crores": 263,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": false,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [],
+  "extraction_notes": "The provided text contains only introductory sections (cover page, currency details, forward-looking statements), table of contents, risk factors, and revenue distribution percentages by geography and business segments. It lacks the full consolidated financial statements (Income Statement, P&L, Cash Flow) and a detailed, comprehensive list of directors. Therefore, most financial figures for revenue, profit, EBITDA, depreciation, finance cost, and cash flow could not be extracted or calculated. Only the Chief Financial Officer explicitly named on the cover page is listed under directors.",
+  "total_assets_crores": 17419,
+  "current_assets_crores": 11359,
+  "current_liabilities_crores": 5012,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "_entity_type": "corporate",
+  "current_ratio": 2.27,
+  "dscr_approximate": 88.8,
+  "ratios_computed": [
+    "CR=2.27x",
+    "DSCR\u224888.80x"
+  ]
+}

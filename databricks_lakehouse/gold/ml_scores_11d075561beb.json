@@ -1,0 +1,55 @@
+{
+  "record_id": "11d075561beb",
+  "company_name": "Infosys  Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T11:09:36.135265",
+  "ml_probability_of_lending": 0.8768,
+  "ml_score": 87.7,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "dscr_approximate",
+      "contribution": 0.31,
+      "interpretation": "Strong debt service coverage"
+    },
+    {
+      "feature": "sector_strong",
+      "contribution": 0.3,
+      "interpretation": "Strong sector conditions \u2014 favourable for lending"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 89.95,
+  "five_cs_final_score": 89.95,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0,
+  "final_decision": "APPROVE",
+  "final_rating": "AA",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 50.0,
+  "tenure_months": 60,
+  "decision_rationale": "Infosys Limited presents an exceptional credit profile, earning an AA rating with a Blended Risk Score of 88.94/100. The company demonstrates outstanding Capacity, reflected by an approximate DSCR of 88.8x and robust operating cash flow of \u20b94351 crores, backed by strong financial performance and raised FY25 revenue guidance. Its excellent Character score of 95, substantial Capital (current ratio 2.27x, total assets \u20b917419 crores), and highly favorable market Conditions in the IT sector further strengthen this recommendation. These factors collectively indicate a very low-risk borrower with ample ability to comfortably service the proposed debt. Therefore, the loan application is approved."
+}
