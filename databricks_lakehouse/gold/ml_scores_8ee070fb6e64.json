@@ -1,0 +1,55 @@
+{
+  "record_id": "8ee070fb6e64",
+  "company_name": "Infosys  Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T18:45:28.283640",
+  "ml_probability_of_lending": 0.916,
+  "ml_score": 91.6,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "has_external_rating",
+      "contribution": 0.55,
+      "interpretation": "Rated entity \u2014 credit history transparent"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 91.8,
+  "five_cs_final_score": 91.8,
+  "five_cs_rating": "AAA",
+  "penalty_applied": 0,
+  "final_decision": "APPROVE",
+  "final_rating": "AAA",
+  "interest_rate_percent": 11.0,
+  "recommended_amount_crores": 2000,
+  "tenure_months": 12,
+  "decision_rationale": "Blended score 91.71/100 with rating AAA. Five-Cs weighted score after penalties: 91.8. Entity type assessed as corporate. Recommendation is APPROVE based on calibrated thresholds and policy floors."
+}

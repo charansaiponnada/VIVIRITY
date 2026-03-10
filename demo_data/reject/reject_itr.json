@@ -1,0 +1,13 @@
+{
+  "assessment_year": "2025-26",
+  "pan": "AAACN0001Q",
+  "total_income_crores": 520,
+  "gross_total_income_crores": 540,
+  "business_income_crores": 498,
+  "tax_paid_crores": 3.1,
+  "tax_payable_crores": 8.6,
+  "revenue_crores": 540,
+  "red_flags": {
+    "itr_tax_mismatch": true
+  }
+}

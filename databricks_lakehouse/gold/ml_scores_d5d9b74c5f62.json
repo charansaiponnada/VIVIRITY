@@ -1,0 +1,55 @@
+{
+  "record_id": "d5d9b74c5f62",
+  "company_name": "Infosys  Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T12:14:15.066154",
+  "ml_probability_of_lending": 0.8596,
+  "ml_score": 86.0,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "dscr_approximate",
+      "contribution": 0.31,
+      "interpretation": "Strong debt service coverage"
+    },
+    {
+      "feature": "sector_stable",
+      "contribution": 0.15,
+      "interpretation": "Stable sector \u2014 neutral to mildly positive for lending"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 82.95,
+  "five_cs_final_score": 82.95,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0,
+  "final_decision": "APPROVE",
+  "final_rating": "AA",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 50.0,
+  "tenure_months": 60,
+  "decision_rationale": "The lending request for Infosys Limited is APPROVED, reflecting an 'AA' rating and a strong Blended Risk Score of 84.32/100. This decision is primarily driven by the exceptional 'Character' (95) and robust 'Capacity' (88) scores, evidenced by a 'Good' promoter reputation, no adverse signals, and impressive financial growth including 7.9% revenue and 11.8% profit growth with an 88.8x DSCR. A healthy 'Capital' structure (78) with a 2.27x current ratio and adequate 'Collateral' (68) from significant total assets further support this, despite 'Conditions' (70) reflecting mixed sector sentiment amidst AI disruptions. The company's 'Leader' position in the Indian IT services sector provides a strong operational foundation for the proposed expansion."
+}

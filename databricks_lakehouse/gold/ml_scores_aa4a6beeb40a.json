@@ -1,0 +1,50 @@
+{
+  "record_id": "aa4a6beeb40a",
+  "company_name": "NOVA RETAILMART",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T19:04:42.301127",
+  "ml_probability_of_lending": 0.8022,
+  "ml_score": 80.2,
+  "ml_rating": "A",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "sector_stable",
+      "contribution": 0.15,
+      "interpretation": "Stable sector \u2014 neutral to mildly positive for lending"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 38.3,
+  "five_cs_final_score": 38.3,
+  "five_cs_rating": "CCC",
+  "penalty_applied": 0,
+  "final_decision": "CONDITIONAL_APPROVE",
+  "final_rating": "B",
+  "interest_rate_percent": 15.5,
+  "recommended_amount_crores": 10,
+  "tenure_months": 12,
+  "decision_rationale": "Blended score 57.16/100 with rating B. Five-Cs weighted score after penalties: 38.3. Entity type assessed as corporate. Recommendation is CONDITIONAL_APPROVE based on calibrated thresholds and policy floors."
+}

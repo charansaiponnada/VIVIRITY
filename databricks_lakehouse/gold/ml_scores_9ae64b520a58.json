@@ -1,0 +1,55 @@
+{
+  "record_id": "9ae64b520a58",
+  "company_name": "Infosys  Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T14:09:32.723571",
+  "ml_probability_of_lending": 0.8746,
+  "ml_score": 87.5,
+  "ml_rating": "AA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "large_listed_company",
+      "contribution": 0.4,
+      "interpretation": "Large listed company \u2014 asset base inferred"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "dscr_approximate",
+      "contribution": 0.31,
+      "interpretation": "Strong debt service coverage"
+    },
+    {
+      "feature": "sector_strong",
+      "contribution": 0.3,
+      "interpretation": "Strong sector conditions \u2014 favourable for lending"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 89.0,
+  "five_cs_final_score": 89.0,
+  "five_cs_rating": "AA",
+  "penalty_applied": 0,
+  "final_decision": "APPROVE",
+  "final_rating": "AA",
+  "interest_rate_percent": 11.5,
+  "recommended_amount_crores": 240.0,
+  "tenure_months": 60,
+  "decision_rationale": "Infosys Limited demonstrates exceptional creditworthiness, meriting an 'AA' rating. The company exhibits robust capacity (score 95) with an outstanding Interest Coverage Ratio of 85.88x and an EBITDA of \u20b94208.1 crores, alongside strong character (score 90) and favorable operating conditions (score 90) in a leading IT services sector. Capitalization is excellent (score 85), implied by very low leverage and a healthy current ratio of 2.27x, while collateral (score 80) is substantial given its \u20b917419 crores asset base. The blended risk score of 88.33/100 strongly supports the approval of the requested loan amount."
+}

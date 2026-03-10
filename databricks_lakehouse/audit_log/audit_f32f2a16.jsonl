@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-09T14:36:03.550449", "session_id": "f32f2a16", "operation": "WRITE_BRONZE", "doc_type": "annual_report", "record_id": "09c698c6b7ec", "company": "Infosys  Limited", "notes": ""}
+{"timestamp": "2026-03-09T14:36:04.158587", "session_id": "f32f2a16", "operation": "WRITE_GOLD", "doc_type": "ml_scoring", "record_id": "297480f80415", "company": "Infosys  Limited", "notes": ""}

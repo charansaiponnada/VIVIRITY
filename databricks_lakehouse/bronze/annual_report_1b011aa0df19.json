@@ -1,7 +1,13 @@
 {
+  "record_id": "1b011aa0df19",
+  "company_name": "Nova Retailmart Private Limited",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-09T19:01:18.517380",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.11,
   "case_id": "REJECT_001",
   "expected_decision": "REJECT",
-  "company_name": "Nova Retailmart Private Limited",
   "sector": "Retail",
   "promoters": "P. Sethi",
   "loan_amount_crores": 95,
@@ -10,15 +16,11 @@
   "financials": {
     "revenue_crores": 690,
     "profit_after_tax": -48,
-    "profit_after_tax_crores": -48,
     "ebitda_crores": 12,
     "ebitda_margin_percent": 1.7,
     "total_assets": 560,
-    "total_assets_crores": 560,
     "net_worth": 58,
-    "net_worth_crores": 58,
     "total_borrowings": 420,
-    "total_borrowings_crores": 420,
     "debt_equity_ratio": 7.2,
     "current_ratio": 0.76,
     "interest_coverage_ratio": 0.62,
@@ -69,7 +71,10 @@
   "research": {
     "company_news": {
       "sentiment": "Negative",
-      "risk_signals": ["Delayed vendor payments", "Store closures"],
+      "risk_signals": [
+        "Delayed vendor payments",
+        "Store closures"
+      ],
       "default_mentions": true
     },
     "promoter_background": {
@@ -99,5 +104,27 @@
       "circular_trading_risk": "High",
       "revenue_inflation_risk": "High"
     }
-  }
+  },
+  "red_flags": {
+    "itc_mismatch": true,
+    "show_cause_notice": true
+  },
+  "gstin": "27AABCT1332L1ZH",
+  "filing_period": "FY 2024-25",
+  "gst_turnover_crores": 485.0,
+  "gstr1_turnover_crores": 512.0,
+  "gstr3b_turnover_crores": 485.0,
+  "gstr3b_tax_liability_crores": 87.3,
+  "gstr2a_itc_crores": 52.1,
+  "gstr3b_itc_claimed_crores": 68.5,
+  "itc_mismatch_percent": 31.5,
+  "turnover_mismatch_percent": 5.6,
+  "circular_trading_risk": "Medium",
+  "gst_notices": [
+    "Show cause notice dated 15-Jan-2025 for ITC mismatch of Rs 16.4 Cr"
+  ],
+  "revenue_crores": 485.0,
+  "_merge_count": 2,
+  "_merged_doc_type": "gst_filing",
+  "_entity_type": "corporate"
 }

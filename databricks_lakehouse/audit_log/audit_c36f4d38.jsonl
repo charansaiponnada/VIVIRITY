@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-09T19:09:55.813214", "session_id": "c36f4d38", "operation": "WRITE_BRONZE", "doc_type": "annual_report", "record_id": "90cfeb4d39cd", "company": "NOVA RETAILMART", "notes": ""}
+{"timestamp": "2026-03-09T19:09:55.816232", "session_id": "c36f4d38", "operation": "WRITE_GOLD", "doc_type": "ml_scoring", "record_id": "4bbc02260abd", "company": "NOVA RETAILMART", "notes": ""}

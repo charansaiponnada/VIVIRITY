@@ -1,0 +1,51 @@
+{
+  "record_id": "7308de8ba4fa",
+  "company_name": "INFOSYS LIMITED",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-09T12:14:15.061227",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.22,
+  "cin": null,
+  "directors": [
+    {
+      "name": "Jayesh Sanghrajka",
+      "role": "Chief Financial Officer"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": 2025,
+  "revenue_crores": null,
+  "revenue_growth_percent": null,
+  "profit_after_tax_crores": null,
+  "profit_before_tax_crores": null,
+  "ebitda_crores": null,
+  "ebitda_margin_percent": null,
+  "depreciation_crores": 569,
+  "finance_cost_crores": 49,
+  "operating_cash_flow_crores": 4351,
+  "capex_crores": 263,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": null,
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": false,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [
+    56
+  ],
+  "extraction_notes": "Only geographical and business segment revenue percentages were found on page 56. Absolute figures for revenue, profit, EBITDA, depreciation, finance cost, and cash flows were not present in the provided text snippets. The document explicitly states 'Item 1. Identity of Directors, Senior Management and Advisers - Not applicable.' (page 4), indicating a full list of directors is not provided in this specific section. Only the Chief Financial Officer, Jayesh Sanghrajka, was explicitly named with a role.",
+  "total_assets_crores": 17419,
+  "current_assets_crores": 11359,
+  "current_liabilities_crores": 5012,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "_entity_type": "corporate",
+  "current_ratio": 2.27,
+  "dscr_approximate": 88.8,
+  "ratios_computed": [
+    "CR=2.27x",
+    "DSCR\u224888.80x"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "record_id": "90cfeb4d39cd",
+  "company_name": "NOVA RETAILMART",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-09T19:09:55.812214",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.11,
+  "account_number": "9988776655",
+  "bank_name": "HDFC Bank",
+  "period": "2025-01-01 to 2025-01-28",
+  "total_credits_crores": 4.25,
+  "total_debits_crores": 4.27,
+  "average_monthly_balance_crores": 5608333.33,
+  "bounce_count": 3,
+  "transaction_count": 12,
+  "revenue_crores": 4.25,
+  "red_flags": {},
+  "_entity_type": "corporate"
+}

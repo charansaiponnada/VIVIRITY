@@ -1,0 +1,19 @@
+{
+  "gstin": "27AAACN0001Q1Z0",
+  "company_name": "Nova Retailmart Private Limited",
+  "filing_period": "FY 2025-26",
+  "gst_turnover_crores": 980,
+  "gstr1_turnover_crores": 1020,
+  "gstr3b_turnover_crores": 890,
+  "gstr2a_itc_crores": 62.3,
+  "gstr3b_itc_claimed_crores": 96.9,
+  "itc_mismatch_percent": 55.5,
+  "turnover_mismatch_percent": 14.6,
+  "circular_trading_risk": "High",
+  "gst_notices": ["Show cause notice for ITC mismatch"],
+  "revenue_crores": 980,
+  "red_flags": {
+    "itc_mismatch": true,
+    "show_cause_notice": true
+  }
+}

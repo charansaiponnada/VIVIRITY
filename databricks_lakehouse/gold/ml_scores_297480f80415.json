@@ -1,0 +1,55 @@
+{
+  "record_id": "297480f80415",
+  "company_name": "Infosys  Limited",
+  "layer": "gold",
+  "databricks_table": "intellicredit.gold.ml_scores",
+  "scoring_timestamp": "2026-03-09T14:36:04.156587",
+  "ml_probability_of_lending": 0.925,
+  "ml_score": 92.5,
+  "ml_rating": "AAA",
+  "ml_decision": "APPROVE",
+  "ml_top_positive_drivers": [
+    {
+      "feature": "promoter_clean",
+      "contribution": 0.95,
+      "interpretation": "Clean promoter background \u2014 low character risk"
+    },
+    {
+      "feature": "has_external_rating",
+      "contribution": 0.55,
+      "interpretation": "Rated entity \u2014 credit history transparent"
+    },
+    {
+      "feature": "no_litigation_risk",
+      "contribution": 0.42,
+      "interpretation": "No material litigation \u2014 low legal risk"
+    },
+    {
+      "feature": "no_regulatory_action",
+      "contribution": 0.38,
+      "interpretation": "No SEBI/RBI/MCA adverse actions"
+    },
+    {
+      "feature": "dscr_approximate",
+      "contribution": 0.31,
+      "interpretation": "Strong debt service coverage"
+    }
+  ],
+  "ml_top_negative_drivers": [
+    {
+      "feature": "_intercept",
+      "contribution": -0.5,
+      "interpretation": "Feature contribution: -0.500"
+    }
+  ],
+  "five_cs_weighted_score": 79.25,
+  "five_cs_final_score": 79.25,
+  "five_cs_rating": "A",
+  "penalty_applied": 0,
+  "final_decision": "APPROVE",
+  "final_rating": "A",
+  "interest_rate_percent": 12.5,
+  "recommended_amount_crores": 50.0,
+  "tenure_months": 60,
+  "decision_rationale": "The credit recommendation for Infosys Limited is an APPROVAL, driven by a strong Blended Risk Score of 79.25 and an 'A' rating. The company exhibits exceptional Character (78) due to its strong reputation and transparent reporting. Capacity (85) is outstanding, evidenced by robust FY25 financials, including $19.28 Billion in revenue, a 16.39% net income margin, and an exceptionally high DSCR of 88.8x. Capital (80) is solid with healthy current assets and implied low leverage, while Collateral (75) is robust given significant total assets. These factors collectively affirm the company's strong creditworthiness, warranting the recommended loan."
+}

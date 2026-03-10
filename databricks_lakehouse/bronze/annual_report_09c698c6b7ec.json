@@ -1,0 +1,49 @@
+{
+  "record_id": "09c698c6b7ec",
+  "company_name": "INFOSYS LIMITED",
+  "source_file": "",
+  "extraction_timestamp": "2026-03-09T14:36:03.283741",
+  "databricks_table": "intellicredit.bronze.annual_reports",
+  "layer": "bronze",
+  "data_quality_score": 0.22,
+  "cin": null,
+  "directors": [
+    {
+      "name": "Jayesh Sanghrajka",
+      "designation": "Chief Financial Officer"
+    }
+  ],
+  "promoters": [],
+  "fiscal_year": 2025,
+  "revenue_crores": null,
+  "revenue_growth_percent": null,
+  "profit_after_tax_crores": null,
+  "profit_before_tax_crores": null,
+  "ebitda_crores": null,
+  "ebitda_margin_percent": null,
+  "depreciation_crores": 569,
+  "finance_cost_crores": 49,
+  "operating_cash_flow_crores": 4351,
+  "capex_crores": 263,
+  "free_cash_flow_crores": null,
+  "external_credit_rating": "D",
+  "red_flags": {
+    "audit_qualified": false,
+    "going_concern_issue": false,
+    "npa_mention": false,
+    "related_party_concerns": false
+  },
+  "key_ratios_source_pages": [],
+  "extraction_notes": "The annual report explicitly states that consolidated financial statements are presented in U.S. dollars. The provided text extract does not contain any financial figures converted or presented in Indian Rupees (\u20b9 Cr) as specifically requested by the prompt. Therefore, all financial numerical fields (revenue, profit, EBITDA, depreciation, finance cost, cash flow, capex, and related ratios) are reported as null. Only one Key Managerial Personnel (CFO) was identified by name in the provided sections; the full list of directors typically found under sections like 'Board of Directors' or 'Key Managerial Personnel' (e.g., from Item 6 'Directors, Senior Management and Employees') is not included in this extract.",
+  "total_assets_crores": 17419,
+  "current_assets_crores": 11359,
+  "current_liabilities_crores": 5012,
+  "extraction_method": "VectorLess RAG \u2014 Split two-call + notes extraction",
+  "_entity_type": "corporate",
+  "current_ratio": 2.27,
+  "dscr_approximate": 88.8,
+  "ratios_computed": [
+    "CR=2.27x",
+    "DSCR\u224888.80x"
+  ]
+}
