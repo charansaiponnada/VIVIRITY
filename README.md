@@ -1,5 +1,6 @@
 # 🏦 Intelli-Credit
-
+## Demo
+[![Watch the demo](https://img.youtube.com/vi/dK3or3lmnXc/0.jpg)](https://youtu.be/dK3or3lmnXc?si=J9X5tN9dClpaSGXN)
 **AI-Powered Corporate Credit Appraisal Engine**
 
 > Automates the end-to-end preparation of a Credit Appraisal Memo (CAM) — a process that takes credit managers weeks, completed in minutes.
