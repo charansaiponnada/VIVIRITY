@@ -172,6 +172,10 @@ def _execute_orchestrator(task: Task) -> Task:
     manual_notes = metadata.get("manual_notes", "")
     loan_amount = metadata.get("loan_amount", "")
     loan_purpose = metadata.get("loan_purpose", "")
+    
+    # Support for dynamic schema in A2A
+    extract_schema = metadata.get("extract_schema", {"ratios": True, "directors": True, "red_flags": True})
+    custom_fields = metadata.get("custom_fields", "")
 
     results = {}
     try:
@@ -186,7 +190,12 @@ def _execute_orchestrator(task: Task) -> Task:
     if file_paths:
         try:
             from agents.ingestor_agent import IngestorAgent
-            financials = IngestorAgent(file_paths=file_paths, entity_type=pre_entity_type).run()
+            financials = IngestorAgent(
+                file_paths=file_paths, 
+                entity_type=pre_entity_type,
+                extract_schema=extract_schema,
+                custom_fields=custom_fields
+            ).run()
             results["financials"] = financials
             task_manager.add_artifact(task.id, create_data_artifact(
                 "financials", financials, "Extracted financial data"))
@@ -197,8 +206,8 @@ def _execute_orchestrator(task: Task) -> Task:
         results["financials"] = {}
 
     primary_fin = results["financials"].get("annual_report") or \
-                  (results["financials"].get(list(results["financials"].keys())[0])
-                   if results["financials"] else {})
+                  (list(results["financials"].values())[0] if results["financials"] else {})
+    
     try:
         from utils.indian_context import detect_entity_type
         entity_type = detect_entity_type(
@@ -238,9 +247,9 @@ def _execute_orchestrator(task: Task) -> Task:
     except Exception as e:
         results["research"] = {}
 
-    # Step 4: Scoring
+    # Step 4: Scoring & SWOT
     task_manager.update_status(task.id, TaskState.WORKING,
-        message=create_agent_message("Computing credit score..."))
+        message=create_agent_message("Computing credit score & SWOT..."))
     try:
         from agents.scoring_agent import ScoringAgent
         sa = ScoringAgent(
@@ -265,7 +274,7 @@ def _execute_orchestrator(task: Task) -> Task:
 
         results["scoring"] = scoring
         task_manager.add_artifact(task.id, create_data_artifact(
-            "scoring", scoring, "Credit score and recommendation"))
+            "scoring", scoring, "Credit score, SWOT and recommendation"))
     except Exception as e:
         results["scoring"] = {}
 
@@ -346,7 +355,17 @@ def _execute_ingestor(task: Task) -> Task:
     except Exception:
         pre_entity_type = "corporate"
 
-    result = IngestorAgent(file_paths=file_paths, entity_type=pre_entity_type).run()
+    # Support dynamic schema in individual agent call
+    extract_schema = metadata.get("extract_schema", {"ratios": True, "directors": True, "red_flags": True})
+    custom_fields = metadata.get("custom_fields", "")
+
+    result = IngestorAgent(
+        file_paths=file_paths, 
+        entity_type=pre_entity_type,
+        extract_schema=extract_schema,
+        custom_fields=custom_fields
+    ).run()
+    
     task_manager.add_artifact(task.id, create_data_artifact("financials", result))
     task_manager.update_status(task.id, TaskState.COMPLETED,
         message=create_agent_message(f"Ingested {len(result)} document type(s)."))
@@ -403,6 +422,18 @@ def _execute_scoring(task: Task) -> Task:
         entity_type=entity_type,
     )
     result = sa.run()
+    
+    # Try ML blend if research is provided
+    if metadata.get("research"):
+        try:
+            from core.ml_credit_model import MLCreditModel
+            ml_results = MLCreditModel().predict(financials, metadata["research"], metadata.get("manual_notes", ""))
+            blend_rec = sa.generate_recommendation(result["five_cs"], result["risk_score"], ml_results=ml_results)
+            result["recommendation"] = blend_rec
+            result["ml_results"] = ml_results
+        except Exception:
+            pass
+
     task_manager.add_artifact(task.id, create_data_artifact("scoring", result))
     rec = result.get("recommendation", {})
     task_manager.update_status(task.id, TaskState.COMPLETED,

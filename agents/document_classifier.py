@@ -25,26 +25,25 @@ DOCUMENT_TYPES = {
         "total taxable income", "tax paid", "tax payable", "advance tax",
         "tcs", "tds",
     ],
-    "legal_notice": [
-        "legal notice", "demand notice", "notice under section",
-        "writ petition", "arbitration notice", "cease and desist",
-        "show cause notice", "default notice",
+    "alm_report": [
+        "asset liability management", "alm report", "structural liquidity",
+        "interest rate sensitivity", "maturity buckets", "liquidity gap",
+        "gap analysis", "dynamic liquidity", "alm statement",
     ],
-    "sanction_letter": [
-        "sanction letter", "loan sanction", "term loan sanction",
-        "credit facility", "working capital limit", "sanctioned amount",
-        "repayment schedule", "moratorium period",
+    "shareholding_pattern": [
+        "shareholding pattern", "distribution of shareholding",
+        "promoter and promoter group", "public shareholding",
+        "equity shares held", "beneficial owners", "clause 35",
     ],
-    "cibil_report": [
-        "cibil", "credit information report", "credit score",
-        "credit bureau", "transunion", "equifax",
-        "credit history", "repayment history",
+    "borrowing_profile": [
+        "borrowing profile", "list of lenders", "sanctioned limit",
+        "outstanding balance", "interest rate", "repayment schedule",
+        "secured loans", "unsecured loans", "debt profile",
     ],
-    "rating_report": [
-        "credit rating assigned", "crisil rated", "icra rated",
-        "care ratings assigned", "rating action communique",
-        "rating reaffirmed", "rating upgraded", "rating downgraded",
-        "brickwork ratings", "acuite ratings",
+    "portfolio_cuts": [
+        "portfolio cuts", "performance data", "npa buckets",
+        "collection efficiency", "disbursement trends", "vintage analysis",
+        "par 90", "delinquency profile", "segment performance",
     ],
 }
 
@@ -54,10 +53,10 @@ PRIORITY = [
     "gst_filing",
     "bank_statement",
     "itr_filing",
-    "legal_notice",
-    "sanction_letter",
-    "cibil_report",
-    "rating_report",
+    "alm_report",
+    "shareholding_pattern",
+    "borrowing_profile",
+    "portfolio_cuts",
 ]
 
 

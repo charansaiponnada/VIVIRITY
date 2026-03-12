@@ -154,7 +154,11 @@ Tables:
 {table_text[:1500]}
 
 Indian financial context:
-- All figures in INR Crores unless stated otherwise
+- All figures in INR Crores unless stated otherwise.
+- CRITICAL: Pay attention to footnotes about currency scales (e.g., 'Figures in Millions' or 'Rs. in Lakhs').
+- If the table uses Millions, divide by 10 to get Crores.
+- If the table uses Lakhs, divide by 100 to get Crores.
+- Handle merged cells and nested headers by inferring context from surrounding rows.
 - Net Worth = Equity Share Capital + Reserves & Surplus
 - Total Debt = Long-term Borrowings + Short-term Borrowings + Current maturities
 - EBITDA = PAT + Tax + Depreciation + Interest/Finance costs

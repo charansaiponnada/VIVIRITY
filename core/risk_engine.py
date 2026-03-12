@@ -271,7 +271,74 @@ def extract_timeline(research: dict, financials: dict = None) -> list[TimelineEv
 
 
 # ═══════════════════════════════════════════════════════════════════════════ #
-# 6. Fraud Signal Detection
+# 6. Pre-Cognitive Risk Signals
+# ═══════════════════════════════════════════════════════════════════════════ #
+
+def detect_precognitive_signals(research: dict, financials: dict) -> list[dict]:
+    """
+    Detect leading indicators of future credit stress (Pre-Cognitive Signals).
+    These are predictive rather than just historical defaults.
+    """
+    signals = []
+
+    # 1. Auditor/Governance Signals (High Predictive Power)
+    red_flags = financials.get("red_flags", {})
+    if red_flags.get("auditor_resigned"):
+        signals.append({
+            "type": "GOVERNANCE",
+            "signal": "Auditor Resignation",
+            "impact": "CRITICAL",
+            "insight": "Sudden auditor changes often precede financial restatements or fraud discoveries."
+        })
+
+    # 2. Promoter Liquidity Stress
+    promoter = research.get("promoter_background", {})
+    p_summary = (promoter.get("summary", "") or "").lower()
+    if "pledge" in p_summary or "margin call" in p_summary:
+        signals.append({
+            "type": "LIQUIDITY",
+            "signal": "Promoter Share Pledge",
+            "impact": "HIGH",
+            "insight": "High promoter pledging indicates personal liquidity stress and risk of forced sell-offs."
+        })
+
+    # 3. Credit Rating Outlook (Forward Looking)
+    news = research.get("company_news", {})
+    n_summary = (news.get("summary", "") or "").lower()
+    if "negative outlook" in n_summary or "watchlist" in n_summary or "downgrade" in n_summary:
+        signals.append({
+            "type": "CREDIT",
+            "signal": "Rating Watch/Downgrade",
+            "impact": "HIGH",
+            "insight": "Credit rating downgrades or negative outlooks are direct leading indicators of rising default risk."
+        })
+
+    # 4. Sector Tailwinds vs Headwinds
+    sector = research.get("sector_regulatory", {})
+    s_summary = (sector.get("summary", "") or "").lower()
+    if "headwinds" in s_summary or "regulatory tightening" in s_summary or "slowdown" in s_summary:
+        signals.append({
+            "type": "MACRO",
+            "signal": "Sector Headwinds",
+            "impact": "MEDIUM",
+            "insight": "Adverse regulatory changes or sector-wide slowdowns impact future repayment capacity."
+        })
+
+    # 5. Working Capital Stress (Financial Leading Indicator)
+    curr_ratio = _safe_float(financials.get("current_ratio"))
+    if curr_ratio and curr_ratio < 1.0:
+        signals.append({
+            "type": "LIQUIDITY",
+            "signal": "Liquidity Crunch (Current Ratio < 1)",
+            "impact": "HIGH",
+            "insight": "Current liabilities exceeding current assets indicates an immediate risk of technical default."
+        })
+
+    return signals
+
+
+# ═══════════════════════════════════════════════════════════════════════════ #
+# 7. Fraud Signal Detection
 # ═══════════════════════════════════════════════════════════════════════════ #
 
 def detect_fraud_signals(financials: dict, cross_ref: dict = None,

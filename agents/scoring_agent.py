@@ -154,13 +154,56 @@ class ScoringAgent:
         five_cs       = self.score_five_cs(ratio_anchors)
         risk_score    = self.calculate_risk_score(five_cs)
         recommendation = self.generate_recommendation(five_cs, risk_score)
+        swot           = self.generate_swot(five_cs, risk_score)
 
         return {
             "five_cs":        five_cs,
             "risk_score":     risk_score,
             "recommendation": recommendation,
             "ratio_anchors":  ratio_anchors,
+            "swot":           swot,
         }
+
+    # ══════════════════════════════════════════════════════════════════════ #
+    # SWOT Generation
+    # ══════════════════════════════════════════════════════════════════════ #
+    def generate_swot(self, five_cs: dict, risk_score: dict) -> dict:
+        """Synthesize financials, research, and scoring into a 4-quadrant SWOT analysis."""
+        print("[ScoringAgent] Generating SWOT Analysis...")
+        
+        fin_summary = json.dumps(self.financials, indent=2)[:3000]
+        res_summary = json.dumps(self.research,   indent=2)[:2000]
+        
+        prompt = f"""
+You are a senior credit risk strategist. Generate a comprehensive SWOT Analysis for {self.company_name}.
+Synthesize Strengths, Weaknesses, Opportunities, and Threats from the provided data.
+
+Financial Snapshot:
+{fin_summary}
+
+Research Intelligence:
+{res_summary}
+
+Risk Assessment:
+- Five Cs Scores: {json.dumps(five_cs)}
+- Final Blended Score: {risk_score.get('final_score')}/100
+- Rating: {risk_score.get('rating')}
+
+Return ONLY valid JSON:
+{{
+    "strengths": ["point 1 with data", "point 2"],
+    "weaknesses": ["point 1 with risk", "point 2"],
+    "opportunities": ["sector growth point", "expansion point"],
+    "threats": ["macro threat", "competitor/legal threat"]
+}}
+"""
+        try:
+            response = _gemini_with_retry(self.client, self.model, prompt)
+            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            return self._parse_json(raw)
+        except Exception as e:
+            print(f"[ScoringAgent] SWOT failed: {e}")
+            return {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []}
 
     # ══════════════════════════════════════════════════════════════════════ #
     # 2. score_five_cs()

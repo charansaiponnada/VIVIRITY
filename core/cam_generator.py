@@ -70,8 +70,25 @@ class CAMGenerator:
 
         self._add_header(doc, company_name, scoring)
         self._add_executive_summary(doc, company_name, scoring, financials, loan_amount, loan_purpose)
+        
+        # New SWOT Section
+        swot = scoring.get("swot", {})
+        if swot:
+            self._add_swot_analysis(doc, swot)
+            
         self._add_company_background(doc, financials, company_name)
+        
+        # New Pre-Cognitive Section
+        from core.risk_engine import detect_precognitive_signals
+        precog = detect_precognitive_signals(research, financials)
+        if precog:
+            self._add_precognitive_signals(doc, precog)
+            
         self._add_financial_analysis(doc, financials)
+        
+        # New Specialized Sections
+        self._add_specialized_documents(doc, financials)
+        
         self._add_five_cs(doc, scoring)
         self._add_research_intelligence(doc, research, scoring)
         self._add_cross_reference(doc, cross_ref)
@@ -90,6 +107,133 @@ class CAMGenerator:
         if self.last_pdf_path:
             print(f"[CAMGenerator] CAM PDF generated: {self.last_pdf_path}")
         return filepath
+
+    # ================================================================== #
+    def _add_swot_analysis(self, doc, swot: dict):
+        self._section_heading(doc, "SWOT ANALYSIS")
+        
+        table = doc.add_table(rows=2, cols=2)
+        table.style = "Table Grid"
+        
+        quadrants = [
+            ("STRENGTHS", "strengths", "1E8449"),
+            ("WEAKNESSES", "weaknesses", "C0392B"),
+            ("OPPORTUNITIES", "opportunities", "2471A3"),
+            ("THREATS", "threats", "D68910")
+        ]
+        
+        for i, (label, key, color) in enumerate(quadrants):
+            row, col = divmod(i, 2)
+            cell = table.cell(row, col)
+            _set_cell_bg(cell, self.LIGHT_GREY)
+            
+            p = cell.paragraphs[0]
+            run = p.add_run(f" {label}")
+            run.bold = True
+            run.font.color.rgb = RGBColor.from_string(color)
+            
+            items = swot.get(key, [])
+            for item in items:
+                cp = cell.add_paragraph(f"• {item}", style="List Bullet")
+                cp.paragraph_format.left_indent = Inches(0.2)
+        
+        doc.add_paragraph()
+
+    def _add_precognitive_signals(self, doc, precog: list):
+        """Add a high-impact table for forward-looking risk signals."""
+        self._section_heading(doc, "🚨 PRE-COGNITIVE RISK SIGNALS")
+        st = doc.add_paragraph()
+        st.add_run("Leading indicators of future credit stress detected through deep intelligence analysis.").italic = True
+        
+        table = doc.add_table(rows=len(precog)+1, cols=3)
+        table.style = "Table Grid"
+        
+        headers = ["Signal Type", "Detected Signal", "Analytical Insight"]
+        for i, h in enumerate(headers):
+            hc = table.cell(0, i)
+            _set_cell_bg(hc, self.VIVRITI_BLUE)
+            _bold_cell(hc, h, color="FFFFFF")
+            
+        for i, sig in enumerate(precog, 1):
+            table.cell(i, 0).text = sig.get("type", "N/A")
+            
+            # Color coding the signal cell based on impact
+            impact = sig.get("impact", "MEDIUM")
+            color = self.RED_ALERT if impact == "CRITICAL" else self.ORANGE_WARN if impact == "HIGH" else self.VIVRITI_GOLD
+            
+            c1 = table.cell(i, 1)
+            p = c1.paragraphs[0]
+            r = p.add_run(f"[{impact}] {sig.get('signal', 'N/A')}")
+            r.bold = True
+            r.font.color.rgb = RGBColor.from_string(color)
+            
+            table.cell(i, 2).text = sig.get("insight", "N/A")
+            
+        doc.add_paragraph()
+
+    def _add_specialized_documents(self, doc, financials: dict):
+        """Add sections for ALM, Shareholding, Borrowing, and Portfolio Cuts."""
+        
+        # 1. Shareholding Pattern
+        sh = financials.get("shareholding_pattern", {})
+        if sh:
+            self._section_heading(doc, "SHAREHOLDING PATTERN")
+            table = doc.add_table(rows=4, cols=2)
+            table.style = "Table Grid"
+            rows = [
+                ("Promoter Holding %", f"{sh.get('promoter_holding_percent', 'N/A')}%"),
+                ("Public Holding %", f"{sh.get('public_holding_percent', 'N/A')}%"),
+                ("Institutional %", f"{sh.get('institutional_holding_percent', 'N/A')}%"),
+                ("Pledged Shares %", f"{sh.get('pledged_shares_percent', 'N/A')}%"),
+            ]
+            for i, (l, v) in enumerate(rows):
+                table.cell(i, 0).text = l
+                table.cell(i, 1).text = v
+            doc.add_paragraph()
+
+        # 2. Borrowing Profile
+        bp = financials.get("borrowing_profile", {})
+        if bp:
+            self._section_heading(doc, "BORROWING PROFILE")
+            lenders = bp.get("lender_details", [])
+            if lenders:
+                table = doc.add_table(rows=len(lenders)+1, cols=4)
+                table.style = "Table Grid"
+                headers = ["Lender", "Facility", "Limit (Cr)", "O/S (Cr)"]
+                for i, h in enumerate(headers):
+                    _bold_cell(table.cell(0, i), h)
+                for i, l in enumerate(lenders, 1):
+                    table.cell(i, 0).text = str(l.get("name", "N/A"))
+                    table.cell(i, 1).text = str(l.get("facility", "N/A"))
+                    table.cell(i, 2).text = str(l.get("limit", "N/A"))
+                    table.cell(i, 3).text = str(l.get("outstanding", "N/A"))
+            doc.add_paragraph()
+
+        # 3. ALM (Liquidity GAP)
+        alm = financials.get("alm_report", {})
+        if alm:
+            self._section_heading(doc, "ALM & LIQUIDITY ANALYSIS")
+            sl = alm.get("structural_liquidity", {})
+            p = doc.add_paragraph()
+            p.add_run("Cumulative GAP (Cr): ").bold = True
+            p.add_run(str(sl.get("cumulative_gap_crores", "N/A")))
+            p.add_run("   |   ")
+            p.add_run("Net GAP %: ").bold = True
+            p.add_run(f"{sl.get('net_gap_percent', 'N/A')}%")
+            doc.add_paragraph()
+
+        # 4. Portfolio Performance
+        pc = financials.get("portfolio_cuts", {})
+        if pc:
+            self._section_heading(doc, "PORTFOLIO PERFORMANCE")
+            pq = pc.get("portfolio_quality", {})
+            p = doc.add_paragraph()
+            p.add_run("GNPA %: ").bold = True
+            p.add_run(f"{pq.get('gnpa_percent', 'N/A')}%")
+            p.add_run("   |   ")
+            p.add_run("Collection Efficiency: ").bold = True
+            p.add_run(f"{pq.get('collection_efficiency', 'N/A')}%")
+            doc.add_paragraph()
 
     def _try_export_pdf(self, docx_path: str) -> str | None:
         """Attempt DOCX to PDF conversion; returns PDF path if successful."""
@@ -271,12 +415,9 @@ class CAMGenerator:
         entity_type = f.get("_entity_type", "corporate")
 
         def fmt(val, suffix="Cr"):
-            if val is None or val == "":
-                return "N/A"
-            try:
-                return f"₹{float(val):,.0f} {suffix}"
-            except Exception:
-                return str(val)
+            if val is None or val == "": return "N/A"
+            try: return f"₹{float(val):,.0f} {suffix}"
+            except Exception: return str(val)
 
         def fmt_pct(val):
             if val is None: return "N/A"
@@ -289,31 +430,43 @@ class CAMGenerator:
             except Exception: return str(val)
 
         rows = []
+        from utils.indian_context import get_cam_financial_rows
         for label, key, fmt_type in get_cam_financial_rows(entity_type):
             val = f.get(key)
-            if fmt_type == "cr":
-                display_val = fmt(val)
-            elif fmt_type == "pct":
-                display_val = fmt_pct(val)
-            elif fmt_type == "ratio":
-                display_val = fmt_ratio(val)
-            else:
-                display_val = str(val) if val is not None else "N/A"
-            rows.append((label, display_val))
+            if fmt_type == "cr": display_val = fmt(val)
+            elif fmt_type == "pct": display_val = fmt_pct(val)
+            elif fmt_type == "ratio": display_val = fmt_ratio(val)
+            else: display_val = str(val) if val is not None else "N/A"
+            
+            # Reasoning logic
+            rationale = "Direct extraction"
+            if val == 0 and key == "total_borrowings_crores":
+                if "debt free" in str(f.get("extraction_notes","")).lower(): rationale = "Inferred: Debt Free"
+            elif "computed" in str(f.get("ratios_computed", "")):
+                if key in str(f.get("ratios_computed", "")): rationale = "Derived/Computed"
+            
+            rows.append((label, display_val, rationale))
 
-        table = doc.add_table(rows=len(rows) + 1, cols=2)
+        table = doc.add_table(rows=len(rows) + 1, cols=3)
         table.style = "Table Grid"
 
         # Header
-        _set_cell_bg(table.cell(0, 0), self.VIVRITI_BLUE)
-        _set_cell_bg(table.cell(0, 1), self.VIVRITI_BLUE)
-        _bold_cell(table.cell(0, 0), "Metric",      color="FFFFFF")
-        _bold_cell(table.cell(0, 1), "Value (FY Latest)", color="FFFFFF")
+        for ci, h in enumerate(["Metric", "Value (FY Latest)", "Rationale / Source"]):
+            cell = table.cell(0, ci)
+            _set_cell_bg(cell, self.VIVRITI_BLUE)
+            _bold_cell(cell, h, color="FFFFFF")
 
-        for i, (label, value) in enumerate(rows, start=1):
-            lc = table.cell(i, 0); vc = table.cell(i, 1)
-            if i % 2 == 0: _set_cell_bg(lc, self.LIGHT_GREY); _set_cell_bg(vc, self.LIGHT_GREY)
-            lc.text = label; vc.text = str(value)
+        for i, (label, value, rat) in enumerate(rows, start=1):
+            table.cell(i, 0).text = label
+            table.cell(i, 1).text = str(value)
+            table.cell(i, 2).text = rat
+
+        # Notes section
+        if f.get("extraction_notes"):
+            doc.add_paragraph()
+            p = doc.add_paragraph()
+            p.add_run("Extraction Notes: ").bold = True
+            p.add_run(f["extraction_notes"])
 
         # Red flags
         red_flags = f.get("red_flags", {})
