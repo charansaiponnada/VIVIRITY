@@ -251,9 +251,29 @@ elif st.session_state.step == 2:
                 for f in uploaded_files:
                     p = os.path.join(tmp_dir, f.name)
                     with open(p, "wb") as fh: fh.write(f.getvalue())
+                    
+                    doc_type = "annual_report" # Default
+                    fname_lower = f.name.lower()
+                    
+                    # 1. Filename-based hint
+                    if "gst" in fname_lower: doc_type = "gst_filing"
+                    elif "bank" in fname_lower or "statement" in fname_lower: doc_type = "bank_statement"
+                    elif "itr" in fname_lower or "tax" in fname_lower: doc_type = "itr_filing"
+                    elif "alm" in fname_lower: doc_type = "alm_report"
+                    elif "shareholding" in fname_lower: doc_type = "shareholding_pattern"
+                    elif "borrowing" in fname_lower or "debt" in fname_lower: doc_type = "borrowing_profile"
+                    elif "portfolio" in fname_lower or "cuts" in fname_lower: doc_type = "portfolio_cuts"
+                    
+                    # 2. Deep content-based for PDFs
                     if f.name.lower().endswith('.pdf'):
-                        with pdfplumber.open(p) as pdf: doc_type = DocumentClassifier(pdf).classify()
-                    else: doc_type = "structured_data"
+                        with pdfplumber.open(p) as pdf:
+                            content_type = DocumentClassifier(pdf).classify()
+                            # Only override if the content-based classifier actually found something (it defaults to annual_report)
+                            if content_type != "annual_report":
+                                doc_type = content_type
+                            elif doc_type == "annual_report": # If still annual_report, use content-based result anyway
+                                doc_type = content_type
+
                     classifications[f.name] = {"type": doc_type, "path": p, "size": f.size, "approved": True}
                 st.session_state.classifications = classifications
                 next_step(); st.rerun()

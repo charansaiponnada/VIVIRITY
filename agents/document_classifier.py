@@ -77,7 +77,7 @@ class DocumentClassifier:
                     scores[doc_type] += 1
 
         # Pick highest score, respecting priority for ties
-        best_type  = "annual_report"
+        best_type  = None
         best_score = 0
 
         for doc_type in PRIORITY:
@@ -91,8 +91,11 @@ class DocumentClassifier:
         except AttributeError:
             page_count = len(getattr(self.parser, "pages", [])) or 0
 
-        if best_score == 0 and page_count > 50:
+        if (best_type is None or best_score == 0) and page_count > 50:
             best_type = "annual_report"
+        
+        if best_type is None:
+            best_type = "annual_report" # Final fallback for UI compatibility
 
         return best_type
 
