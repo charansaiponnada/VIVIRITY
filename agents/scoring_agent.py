@@ -84,9 +84,9 @@ PENALTY_RULES = {
     "wilful_default_cibil": (30, "cibil_field",    "Wilful default flagged in CIBIL"),
 
     # Manual field notes
-    "factory_idle":         (10, "manual_notes",    "Factory underutilisation / idle"),
-    "mgmt_evasive":         ( 8, "manual_notes",    "Management evasive / uncooperative"),
-    "revenue_mismatch":     (12, "manual_notes",    "Revenue mismatch / discrepancy noted"),
+    "factory_idle":         (15, "manual_notes",    "Factory underutilisation / idle (Field Visit)"),
+    "mgmt_evasive":         (15, "manual_notes",    "Management evasive / uncooperative (Field Visit)"),
+    "revenue_mismatch":     (20, "manual_notes",    "Revenue mismatch / discrepancy noted (Field Visit)"),
 }
 
 # ── EXCLUDED events — these must NEVER trigger penalties ── #
@@ -399,15 +399,47 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         final_score = blend["blended_score"]
         rating      = self._score_to_rating(final_score)
 
+        # ── HARD STOP LOGIC (Automatic Rejection for High-Risk Signals) ── #
+        hard_rejection = False
+        rejection_triggers = []
+
+        # 1. Wilful Defaulter (RBI Mandatory)
+        rf = self.financials.get("red_flags", {})
+        promoter = self.research.get("promoter_background", {})
+        if promoter.get("wilful_defaulter") or rf.get("wilful_default_cibil"):
+            hard_rejection = True
+            rejection_triggers.append("Wilful Defaulter status detected (RBI Hard Stop)")
+
+        # 2. Suspected Fraud / Circular Trading (Cross-Ref or Notes)
+        cross_ref = self.research.get("cross_reference", {})
+        if cross_ref.get("circular_trading_risk") == "High" or "circular" in self.manual_notes.lower():
+            hard_rejection = True
+            rejection_triggers.append("High risk of circular trading / round-tripping detected")
+
+        # 3. Massive Revenue Inflation (Cross-Ref or Notes)
+        if cross_ref.get("revenue_inflation_risk") == "High" or "inflated" in self.manual_notes.lower():
+            hard_rejection = True
+            rejection_triggers.append("Significant revenue inflation risk (Financial integrity concern)")
+        
+        # 4. Severe Financial Distress (IBC/NCLT)
+        lit = self.research.get("litigation") or self.research.get("legal_disputes", {})
+        if lit.get("ibc_cirp"):
+            hard_rejection = True
+            rejection_triggers.append("Active IBC/CIRP insolvency proceedings")
+
         # Decision from blended score
-        if final_score >= 75:
+        if hard_rejection:
+            decision = "REJECT"
+        elif final_score >= 75:
             decision = "APPROVE"
-        elif final_score >= 50:
+        elif final_score >= 55: # Increased from 50 for stricter rejection path
             decision = "CONDITIONAL_APPROVE"
         else:
             decision = "REJECT"
+
         if rating in ("CCC", "D"):
             decision = "REJECT"
+            rejection_triggers.append(f"Credit rating {rating} below lending threshold")
 
         rate_table = ENTITY_CONFIGS.get(self.entity_type, ENTITY_CONFIGS["corporate"]).get("rate_table", RATE_TABLE)
         rate = rate_table.get(rating)
@@ -435,7 +467,7 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
                 "interest_rate_percent": rate if decision != "REJECT" else None,
                 "tenure_months": tenure if decision != "REJECT" else None,
                 "key_conditions": [],
-                "rejection_reason": "Credit score below minimum threshold." if decision == "REJECT" else None,
+                "rejection_reason": "; ".join(rejection_triggers) if hard_rejection else ("Credit score below minimum threshold." if decision == "REJECT" else None),
             }
         else:
             prompt = f"""
