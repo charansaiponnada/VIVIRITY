@@ -1,6 +1,6 @@
-# 🏦 Intelli-Credit | Vivriti Capital Hackathon 2026
+# 🏦 Intelli-Credit
 
-**AI-Powered Corporate Credit Appraisal & Intelligence Engine**
+**AI-Powered Corporate Credit Appraisal Engine**
 
 > Transforming raw, unstructured financial data into high-precision, AI-backed investment reports. From onboarding to deep analysis in under 5 minutes.
 
