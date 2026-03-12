@@ -341,7 +341,7 @@ elif st.session_state.step == 4:
                 
                 st.write("📈 Calculating risk scores and Pre-Cognitive signals...")
                 from agents.scoring_agent import ScoringAgent
-                sa = ScoringAgent(cname, p_fin, res, entity_type=e_type)
+                sa = ScoringAgent(cname, p_fin, res, entity_type=e_type, cross_ref=st.session_state.cross_ref)
                 sr = sa.run()
                 
                 # PRE-COGNITIVE SIGNALS (Analytical Depth)
@@ -572,7 +572,8 @@ if st.session_state.get("analysis_done"):
                 sa = ScoringAgent(
                     st.session_state.company_name, fin, res, 
                     manual_notes=reviewer_notes, 
-                    entity_type=fin.get("_entity_type", "corporate")
+                    entity_type=fin.get("_entity_type", "corporate"),
+                    cross_ref=st.session_state.cross_ref
                 )
                 new_sr = sa.run()
                 

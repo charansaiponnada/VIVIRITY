@@ -134,13 +134,15 @@ class ScoringAgent:
 
     def __init__(self, company_name: str, financials: dict,
                  research: dict, manual_notes: str = "",
-                 loan_purpose: str = "", entity_type: str = "corporate"):
+                 loan_purpose: str = "", entity_type: str = "corporate",
+                 cross_ref: dict = None):
         self.company_name = company_name
         self.financials   = financials or {}
         self.research     = research   or {}
         self.manual_notes = manual_notes or ""
         self.loan_purpose = loan_purpose or ""
         self.entity_type  = entity_type or self.financials.get("_entity_type", "corporate")
+        self.cross_ref    = cross_ref or {}
         self.model        = "gemini-2.5-flash"
         self.client       = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -412,18 +414,19 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             rejection_triggers.append("Wilful Defaulter status detected (RBI Hard Stop)")
 
         # 2. Suspected Fraud / Circular Trading (Cross-Ref or Notes)
-        cross_ref = self.research.get("cross_reference", {})
-        if cross_ref.get("circular_trading_risk") == "High" or "circular" in notes_lower or "round-trip" in notes_lower:
+        if self.cross_ref.get("circular_trading_risk") == "High" or \
+           any(w in notes_lower for w in ["circular", "round-trip", "round trip", "suspicious transaction"]):
             hard_rejection = True
             rejection_triggers.append("High risk of circular trading / round-tripping detected")
 
         # 3. Massive Revenue Inflation (Cross-Ref or Notes)
-        if cross_ref.get("revenue_inflation_risk") == "High" or "inflated" in notes_lower or "mismatch" in notes_lower:
+        if self.cross_ref.get("revenue_inflation_risk") == "High" or \
+           any(w in notes_lower for w in ["inflated", "mismatch", "discrepancy", "fake invoice", "window dressing"]):
             hard_rejection = True
             rejection_triggers.append("Significant revenue inflation risk / integrity concern")
         
         # 4. Severe Management Integrity Issues
-        if "evasive" in notes_lower or "uncooperative" in notes_lower or "refused" in notes_lower:
+        if any(w in notes_lower for w in ["evasive", "uncooperative", "refused", "avoided", "lack of transparency"]):
             hard_rejection = True
             rejection_triggers.append("Management evasive / Lack of transparency (Field Visit)")
 
@@ -432,7 +435,7 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             decision = "REJECT"
         elif final_score >= 75:
             decision = "APPROVE"
-        elif final_score >= 60: # Increased from 55 for even stricter rejection path
+        elif final_score >= 50: # Restored from 60 to allow B rating (50-60) as CONDITIONAL_APPROVE
             decision = "CONDITIONAL_APPROVE"
         else:
             decision = "REJECT"
