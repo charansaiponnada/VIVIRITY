@@ -402,37 +402,37 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # ── HARD STOP LOGIC (Automatic Rejection for High-Risk Signals) ── #
         hard_rejection = False
         rejection_triggers = []
+        notes_lower = self.manual_notes.lower()
 
         # 1. Wilful Defaulter (RBI Mandatory)
         rf = self.financials.get("red_flags", {})
         promoter = self.research.get("promoter_background", {})
-        if promoter.get("wilful_defaulter") or rf.get("wilful_default_cibil"):
+        if promoter.get("wilful_defaulter") or rf.get("wilful_default_cibil") or "wilful" in notes_lower:
             hard_rejection = True
             rejection_triggers.append("Wilful Defaulter status detected (RBI Hard Stop)")
 
         # 2. Suspected Fraud / Circular Trading (Cross-Ref or Notes)
         cross_ref = self.research.get("cross_reference", {})
-        if cross_ref.get("circular_trading_risk") == "High" or "circular" in self.manual_notes.lower():
+        if cross_ref.get("circular_trading_risk") == "High" or "circular" in notes_lower or "round-trip" in notes_lower:
             hard_rejection = True
             rejection_triggers.append("High risk of circular trading / round-tripping detected")
 
         # 3. Massive Revenue Inflation (Cross-Ref or Notes)
-        if cross_ref.get("revenue_inflation_risk") == "High" or "inflated" in self.manual_notes.lower():
+        if cross_ref.get("revenue_inflation_risk") == "High" or "inflated" in notes_lower or "mismatch" in notes_lower:
             hard_rejection = True
-            rejection_triggers.append("Significant revenue inflation risk (Financial integrity concern)")
+            rejection_triggers.append("Significant revenue inflation risk / integrity concern")
         
-        # 4. Severe Financial Distress (IBC/NCLT)
-        lit = self.research.get("litigation") or self.research.get("legal_disputes", {})
-        if lit.get("ibc_cirp"):
+        # 4. Severe Management Integrity Issues
+        if "evasive" in notes_lower or "uncooperative" in notes_lower or "refused" in notes_lower:
             hard_rejection = True
-            rejection_triggers.append("Active IBC/CIRP insolvency proceedings")
+            rejection_triggers.append("Management evasive / Lack of transparency (Field Visit)")
 
-        # Decision from blended score
+        # Decision logic
         if hard_rejection:
             decision = "REJECT"
         elif final_score >= 75:
             decision = "APPROVE"
-        elif final_score >= 55: # Increased from 50 for stricter rejection path
+        elif final_score >= 60: # Increased from 55 for even stricter rejection path
             decision = "CONDITIONAL_APPROVE"
         else:
             decision = "REJECT"

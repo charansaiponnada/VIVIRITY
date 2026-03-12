@@ -240,9 +240,14 @@ class CAMGenerator:
         if not DOCX2PDF_AVAILABLE:
             return None
         try:
-            pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
-            docx2pdf_convert(docx_path, pdf_path)
-            return pdf_path if os.path.exists(pdf_path) else None
+            import pythoncom
+            pythoncom.CoInitialize()
+            try:
+                pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
+                docx2pdf_convert(docx_path, pdf_path)
+                return pdf_path if os.path.exists(pdf_path) else None
+            finally:
+                pythoncom.CoUninitialize()
         except Exception as e:
             print(f"[CAMGenerator] PDF conversion skipped: {e}")
             return None
