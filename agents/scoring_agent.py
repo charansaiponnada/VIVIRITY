@@ -730,24 +730,24 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # ── Manual field notes ────────────────────────────────────────── #
         if self.manual_notes:
             n = self.manual_notes.lower()
-            if any(w in n for w in ["idle","shutdown","operating at","% capacity","underutil"]):
+            if any(w in n for w in ["idle","shutdown","operating at","% capacity","underutil","shut down"]):
                 risk_signals.append(build_risk_signal(
                     "Factory Underutilisation", "financial",
-                    "Factory underutilisation / capacity concern",
-                    "Credit Officer Field Notes", 10,
-                    severity="MEDIUM", sources_found=1))
+                    "Factory underutilisation / capacity concern (Field Visit)",
+                    "Credit Officer Field Notes", 15,
+                    severity="HIGH", sources_found=1))
             if any(w in n for w in ["evasive","uncooperative","refused","avoided"]):
                 risk_signals.append(build_risk_signal(
                     "Management Evasion", "promoter",
-                    "Management evasive / uncooperative during interview",
-                    "Credit Officer Field Notes", 8,
-                    severity="MEDIUM", sources_found=1))
+                    "Management evasive / uncooperative during interview (Field Visit)",
+                    "Credit Officer Field Notes", 15,
+                    severity="HIGH", sources_found=1))
             if any(w in n for w in ["inflated","mismatch","discrepancy","round-trip","circular"]):
                 risk_signals.append(build_risk_signal(
-                    "Revenue Concern (Field)", "fraud",
-                    "Revenue mismatch / inflation concern from field visit",
-                    "Credit Officer Field Notes", 12,
-                    severity="HIGH", sources_found=1))
+                    "Fraud/Integrity Concern (Field)", "fraud",
+                    "Revenue mismatch / circular trading concern from field visit",
+                    "Credit Officer Field Notes", 20,
+                    severity="CRITICAL", sources_found=1))
 
         # Sum adjusted penalties (dynamic: severity × confidence × temporal)
         raw_penalty = sum(s.adjusted_penalty for s in risk_signals)
