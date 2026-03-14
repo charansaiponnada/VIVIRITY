@@ -69,7 +69,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
     with col1:
         fig = go.Figure(go.Indicator(
             mode="gauge+number+delta",
-            value=score,
+            value=_safe_float(score),
             title={"text": "Credit Score", "font": {"size": 16, "color": VIVRITI_BLUE}},
             gauge={
                 "axis": {"range": [0, 100], "tickwidth": 1},
@@ -90,7 +90,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
     with col2:
         fig2 = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=ml_prob * 100,
+            value=_safe_float(ml_prob) * 100,
             title={"text": "ML Lending Probability", "font": {"size": 14, "color": VIVRITI_BLUE}},
             gauge={
                 "axis": {"range": [0, 100]},
@@ -123,7 +123,7 @@ def render_credit_command_center(scoring: dict, ml_results: dict,
     col_a, col_b = st.columns([1.2, 1])
     with col_a:
         categories = ["Character", "Capacity", "Capital", "Collateral", "Conditions"]
-        values = [five_cs.get(f"{c.lower()}_score", 0) for c in categories]
+        values = [_safe_float(five_cs.get(f"{c.lower()}_score", 0)) for c in categories]
         fig3 = go.Figure(go.Scatterpolar(
             r=values + [values[0]], theta=categories + [categories[0]], fill="toself",
             fillcolor="rgba(27, 58, 107, 0.15)", line=dict(color=VIVRITI_BLUE, width=2.5)
