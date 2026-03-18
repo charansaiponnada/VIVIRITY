@@ -119,6 +119,12 @@ TAVILY_API_KEY=your_tavily_api_key
 - `a2a/`: Implementation of the Google A2A protocol for interoperability.
 - `core/cam_generator.py`: Automated generation of professional CAM reports.
 
+
+## 🤝 Contributors
+
+- [@charansaiponnada](https://github.com/charansaiponnada)
+- [@neelimavana](https://github.com/neelimavana)
+
 ---
 
 ## 🏆 Team DOMINIX
