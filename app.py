@@ -7,6 +7,10 @@ import tempfile
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
+import dashboards as _dashboards
+import dashboards.realtime_dashboard as _realtime_dash
+import dashboards.trend_dashboard as _trend_dash
+import dashboards.stress_testing_dashboard as _stress_dash
 
 load_dotenv()
 
@@ -763,13 +767,11 @@ if st.session_state.get("analysis_done"):
     )
 
     with tabs[0]:
-        from dashboards import render_credit_command_center
-
-        render_credit_command_center(sr, ml_results, fin, cname)
+        _dashboards.render_credit_command_center(sr, ml_results, fin, cname)
     with tabs[1]:
-        from dashboards import render_risk_intelligence
-
-        render_risk_intelligence(sr, res, xref, cname, precognitive_signals=precog)
+        _dashboards.render_risk_intelligence(
+            sr, res, xref, cname, precognitive_signals=precog
+        )
     with tabs[2]:
         st.markdown("### 🚨 Pre-Cognitive Risk Signals")
         st.info(
@@ -785,9 +787,7 @@ if st.session_state.get("analysis_done"):
                     st.write(f"**Type:** {p['type']}")
                     st.write(f"**Insight:** {p['insight']}")
     with tabs[3]:
-        from dashboards import render_financial_health
-
-        render_financial_health(fin, sr, cname)
+        _dashboards.render_financial_health(fin, sr, cname)
         st.markdown("---")
         st.markdown("#### 📋 Extraction & Source Audit")
         c_a, c_b = st.columns(2)
@@ -835,9 +835,7 @@ if st.session_state.get("analysis_done"):
         trend_analysis = sr.get("trend_analysis", {})
 
         if trend_analysis and trend_analysis.get("years_analyzed"):
-            from dashboards.trend_dashboard import render_trend_analysis
-
-            render_trend_analysis(trend_analysis, cname)
+            _trend_dash.render_trend_analysis(trend_analysis, cname)
         else:
             st.info(
                 "Multi-year trend data not available. Upload multiple years of financial data to enable trend analysis."
@@ -902,7 +900,7 @@ if st.session_state.get("analysis_done"):
                     ],
                     "risk_signals": [],
                 }
-                from dashboards.trend_dashboard import render_trend_analysis
+            _trend_dash.render_trend_analysis(demo_trends, cname)
 
                 render_trend_analysis(demo_trends, cname)
 
@@ -945,9 +943,7 @@ if st.session_state.get("analysis_done"):
         stress_results = sr.get("stress_test_results", {})
 
         if stress_results and stress_results.get("overall_stress_score"):
-            from dashboards.stress_testing_dashboard import render_stress_testing
-
-            render_stress_testing(stress_results, cname)
+            _stress_dash.render_stress_testing(stress_results, cname)
         else:
             st.info("Stress testing data not available.")
 
@@ -1001,9 +997,7 @@ if st.session_state.get("analysis_done"):
                         "Improve collections and monitor debtor days",
                     ],
                 }
-                from dashboards.stress_testing_dashboard import render_stress_testing
-
-                render_stress_testing(demo_stress, cname)
+            _stress_dash.render_stress_testing(demo_stress, cname)
 
         st.markdown("---")
         st.markdown("#### 🔍 Stress-Adjusted Risk Factors")
@@ -1035,12 +1029,10 @@ if st.session_state.get("analysis_done"):
                 )
 
     with tabs[6]:
-        from dashboards import render_specialized_monitor
-
         spec_data = st.session_state.financials_all.get(
             "merged_all", st.session_state.financials_all
         )
-        render_specialized_monitor(spec_data, cname)
+        _dashboards.render_specialized_monitor(spec_data, cname)
 
     with tabs[7]:
         c_x1, c_x2 = st.columns(2)
@@ -1121,14 +1113,9 @@ if st.session_state.get("analysis_done"):
             enrichment_report = st.session_state.get("enrichment_report")
 
             if live_profile:
-                from dashboards.realtime_dashboard import (
-                    render_live_data_panel,
-                    render_live_data_summary,
-                )
+                _realtime_dash.render_live_data_panel(live_profile, enrichment_report)
 
-                render_live_data_panel(live_profile, enrichment_report)
-
-                summary = render_live_data_summary(live_profile)
+                summary = _realtime_dash.render_live_data_summary(live_profile)
                 st.markdown("---")
                 st.markdown("#### 🔍 Live Data Risk Summary")
 
