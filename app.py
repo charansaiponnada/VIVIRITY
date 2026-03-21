@@ -904,7 +904,7 @@ if st.session_state.get("analysis_done"):
                     ],
                     "risk_signals": [],
                 }
-            render_trend_analysis(demo_trends, cname)
+                render_trend_analysis(demo_trends, cname)
 
         st.markdown("---")
         st.markdown("#### 📐 Trend-Adjusted Risk Factors")
@@ -999,7 +999,7 @@ if st.session_state.get("analysis_done"):
                         "Improve collections and monitor debtor days",
                     ],
                 }
-            render_stress_testing(demo_stress, cname)
+                render_stress_testing(demo_stress, cname)
 
         st.markdown("---")
         st.markdown("#### 🔍 Stress-Adjusted Risk Factors")
