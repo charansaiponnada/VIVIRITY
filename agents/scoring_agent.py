@@ -189,6 +189,7 @@ class ScoringAgent:
         entity_type: str = "corporate",
         cross_ref: dict = None,
         trend_analysis: dict = None,
+        stress_test_results: dict = None,
     ):
         self.company_name = company_name
         self.financials = financials or {}
@@ -200,6 +201,7 @@ class ScoringAgent:
         )
         self.cross_ref = cross_ref or {}
         self.trend_analysis = trend_analysis or {}
+        self.stress_test_results = stress_test_results or {}
         self.model = "gemini-2.5-flash"
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -222,6 +224,7 @@ class ScoringAgent:
             "ratio_anchors": ratio_anchors,
             "swot": swot,
             "trend_analysis": self.trend_analysis,
+            "stress_test_results": self.stress_test_results,
         }
 
     # ══════════════════════════════════════════════════════════════════════ #
@@ -1120,6 +1123,49 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
                     "Multi-Year Trend Analysis",
                     8,
                     severity="MEDIUM",
+                    sources_found=1,
+                )
+            )
+
+        # ── Stress Testing Risk Signals ────────────────────────────────── #
+        stress_results = self.stress_test_results or {}
+        stress_rating = stress_results.get("risk_rating", "LOW")
+        stress_score = stress_results.get("overall_stress_score", 0)
+
+        if stress_rating == "CRITICAL":
+            risk_signals.append(
+                build_risk_signal(
+                    "Critical Stress Test Failure",
+                    "financial",
+                    f"Stress score {stress_score:.0f} - company fails multiple stress scenarios",
+                    "Stress Testing Analysis",
+                    20,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
+        elif stress_rating == "HIGH":
+            risk_signals.append(
+                build_risk_signal(
+                    "High Stress Test Risk",
+                    "financial",
+                    f"Stress score {stress_score:.0f} - significant vulnerability under stress",
+                    "Stress Testing Analysis",
+                    15,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
+
+        for point in stress_results.get("critical_stress_points", [])[:2]:
+            risk_signals.append(
+                build_risk_signal(
+                    "Stress Test Critical Point",
+                    "financial",
+                    point,
+                    "Stress Testing Analysis",
+                    10,
+                    severity="HIGH",
                     sources_found=1,
                 )
             )

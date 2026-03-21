@@ -738,6 +738,7 @@ if st.session_state.get("analysis_done"):
             "🚨 Pre-Cognitive",
             "💰 Financials",
             "📈 Trend Analysis",
+            "📉 Stress Testing",
             "🔍 Specialized",
             "🔗 Cross-Ref",
             "🤖 ML",
@@ -921,6 +922,104 @@ if st.session_state.get("analysis_done"):
             )
 
     with tabs[5]:
+        st.markdown("### 📉 Stress Testing & Scenario Analysis")
+        st.caption(
+            "Multi-scenario stress testing with rate hike, revenue drop, and liquidity analysis"
+        )
+
+        stress_results = sr.get("stress_test_results", {})
+
+        if stress_results and stress_results.get("overall_stress_score"):
+            from dashboards.stress_testing_dashboard import render_stress_testing
+
+            render_stress_testing(stress_results, cname)
+        else:
+            st.info("Stress testing data not available.")
+
+            if st.button("🔄 Run Stress Tests", use_container_width=True):
+                from core.stress_testing import run_stress_test
+
+                demo_stress = {
+                    "company_name": cname,
+                    "current_dscr": 2.5,
+                    "current_interest_coverage": 4.2,
+                    "overall_stress_score": 35.0,
+                    "risk_rating": "MEDIUM",
+                    "scenarios": [
+                        {
+                            "name": "Interest Rate Hike (Moderate)",
+                            "severity": "moderate",
+                            "original": 4.2,
+                            "stressed": 3.5,
+                            "change_pct": -16.7,
+                            "risk_level": "LOW",
+                            "description": "Rate hike of 1.0% increases interest cost. ICR drops from 4.2x to 3.5x",
+                            "recommendation": "Maintain adequate liquidity buffer to absorb rate hike impact",
+                        },
+                        {
+                            "name": "Revenue Decline (Moderate)",
+                            "severity": "moderate",
+                            "original": 4.2,
+                            "stressed": 2.8,
+                            "change_pct": -33.3,
+                            "risk_level": "MEDIUM",
+                            "description": "Revenue drop of 20% reduces EBITDA. ICR drops from 4.2x to 2.8x",
+                            "recommendation": "Ensure adequate cash reserves and credit facilities",
+                        },
+                        {
+                            "name": "Liquidity Stress (Moderate)",
+                            "severity": "moderate",
+                            "original": 1.8,
+                            "stressed": 1.1,
+                            "change_pct": -38.9,
+                            "risk_level": "MEDIUM",
+                            "description": "Receivables not realized (40% haircut). Current ratio drops from 1.8x to 1.1x",
+                            "recommendation": "Improve collections and monitor debtor days",
+                        },
+                    ],
+                    "critical_stress_points": [
+                        "Liquidity stress reduces current ratio below 1.2x threshold",
+                    ],
+                    "recommendations": [
+                        "Maintain adequate liquidity buffer to absorb rate hike impact",
+                        "Ensure adequate cash reserves and credit facilities",
+                        "Improve collections and monitor debtor days",
+                    ],
+                }
+                from dashboards.stress_testing_dashboard import render_stress_testing
+
+                render_stress_testing(demo_stress, cname)
+
+        st.markdown("---")
+        st.markdown("#### 🔍 Stress-Adjusted Risk Factors")
+
+        stress_rating = (
+            stress_results.get("risk_rating", "UNKNOWN")
+            if stress_results
+            else "UNKNOWN"
+        )
+        stress_score = (
+            stress_results.get("overall_stress_score", 0) if stress_results else 0
+        )
+
+        if stress_score > 0:
+            stress_adjustment = 0
+            if stress_rating == "CRITICAL":
+                stress_adjustment = -10
+            elif stress_rating == "HIGH":
+                stress_adjustment = -5
+            elif stress_rating == "MEDIUM":
+                stress_adjustment = -2
+
+            adjusted_score = rec.get("final_score", 0) + stress_adjustment
+            if stress_adjustment != 0:
+                st.metric(
+                    "Stress-Adjusted Score",
+                    f"{adjusted_score:.0f}/100",
+                    delta=f"{stress_adjustment:+.0f} from stress testing",
+                )
+
+    with tabs[6]:
         from dashboards import render_specialized_monitor
 
         spec_data = st.session_state.financials_all.get(
@@ -928,7 +1027,7 @@ if st.session_state.get("analysis_done"):
         )
         render_specialized_monitor(spec_data, cname)
 
-    with tabs[6]:
+    with tabs[7]:
         c_x1, c_x2 = st.columns(2)
         with c_x1:
             st.markdown("#### 🔍 Cross-Document Verification")
@@ -944,7 +1043,7 @@ if st.session_state.get("analysis_done"):
                 if v and k not in ["litigation_count", "severity", "source_page"]:
                     st.error(f"**{k.replace('_', ' ').title()}:** {v}")
 
-    with tabs[7]:
+    with tabs[8]:
         if ML_AVAILABLE and ml_results:
             st.markdown("### 🤖 ML Model Intelligence")
             ml_c1, ml_c2 = st.columns(2)
@@ -964,7 +1063,7 @@ if st.session_state.get("analysis_done"):
         else:
             st.info("ML model results not available for this analysis.")
 
-    with tabs[8]:
+    with tabs[9]:
         if REALTIME_AVAILABLE:
             st.markdown("### 📡 Live Data Verification Panel")
             st.caption(
@@ -1057,7 +1156,7 @@ if st.session_state.get("analysis_done"):
             )
             st.code("pip install httpx")
 
-    with tabs[9]:
+    with tabs[10]:
         st.markdown("### 🔌 Google A2A Protocol")
         if "a2a_thread" not in st.session_state:
             st.session_state.a2a_thread = None
