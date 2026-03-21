@@ -10,6 +10,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _ts():
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _log(msg: str, status: st):
+    status.write(f"`[{_ts()}]` {msg}")
+
+
 REALTIME_AVAILABLE = True
 try:
     from core.realtime_integration import RealtimeDataProvider, LiveDataEnricher
@@ -124,11 +133,12 @@ with st.sidebar:
     st.caption("Vivriti Capital Hackathon 2026\nIIT Hyderabad · YUVAAN 2026")
 
 
-def set_agent(name, status):
+def set_agent(name, status, ts=None):
     icon = {"pending": "⚪", "running": "🔄", "done": "✅", "error": "❌"}.get(
         status, "⚪"
     )
-    agent_placeholders[name].markdown(f"{icon} {name}")
+    ts_str = f" `{ts or _ts()}`" if status == "done" else ""
+    agent_placeholders[name].markdown(f"{icon} {name}{ts_str}")
 
 
 def _is_missing(val):
@@ -478,12 +488,12 @@ elif st.session_state.step == 4:
 
         # High-impact status container for better UX
         with st.status(
-            "🚀 Deep Credit Analysis in Progress...", expanded=True
+            f"🚀 Deep Credit Analysis in Progress... `[Started {_ts()}]`", expanded=True
         ) as status:
             try:
                 from utils.indian_context import detect_entity_type
 
-                st.write("🔍 Identifying entity type and sector context...")
+                _log("🔍 Identifying entity type and sector context...", status)
                 e_type = detect_entity_type(cname, st.session_state.cin, sector)
 
                 from agents.ingestor_agent import IngestorAgent
@@ -499,7 +509,7 @@ elif st.session_state.step == 4:
                     "red_flags": st.session_state.extract_red_flags,
                 }
 
-                st.write("📄 Ingesting and parsing financial documents...")
+                _log("📄 Ingesting and parsing financial documents...", status)
                 set_agent("Data Ingestor", "running")
 
                 def _log_placeholder(msg, lvl="info"):
@@ -518,25 +528,28 @@ elif st.session_state.step == 4:
                 )
                 p_fin["_entity_type"] = e_type
                 st.session_state.financials_all = fin_all
-                set_agent("Data Ingestor", "done")
+                set_agent("Data Ingestor", "done", _ts())
 
-                st.write("🔗 Performing cross-reference and GST validation...")
+                _log("🔗 Performing cross-reference and GST validation...", status)
                 from agents.cross_reference_agent import CrossReferenceAgent
 
                 st.session_state.cross_ref = CrossReferenceAgent(fin_all).run()
 
-                st.write("🌐 Gathering external intelligence (MCA, e-Courts, News)...")
+                _log(
+                    "🌐 Gathering external intelligence (MCA, e-Courts, News)...",
+                    status,
+                )
                 from agents.research_agent import ResearchAgent
 
                 res = ResearchAgent(cname, sector).run()
 
-                st.write("🧠 Enriching financial data with research signals...")
+                _log("🧠 Enriching financial data with research signals...", status)
                 p_fin, back, s_map = _enrich_financials(p_fin, fin_all, res, cname)
                 st.session_state.financials = p_fin
                 st.session_state.financials_source_map = s_map
                 st.session_state.research = res
 
-                st.write("📈 Calculating risk scores and Pre-Cognitive signals...")
+                _log("📈 Calculating risk scores and Pre-Cognitive signals...", status)
                 from agents.scoring_agent import ScoringAgent
 
                 sa = ScoringAgent(
@@ -556,7 +569,7 @@ elif st.session_state.step == 4:
                 )
 
                 if ML_AVAILABLE:
-                    st.write("🤖 Running ML credit prediction model...")
+                    _log("🤖 Running ML credit prediction model...", status)
                     ml_r = MLCreditModel().predict(p_fin, res, "")
                     if ml_r:
                         sr["recommendation"] = sa.generate_recommendation(
@@ -566,7 +579,7 @@ elif st.session_state.step == 4:
 
                 st.session_state.scoring_results = sr
 
-                st.write("📝 Generating final Credit Appraisal Memo (CAM)...")
+                _log("📝 Generating final Credit Appraisal Memo (CAM)...", status)
                 from agents.cam_agent import CAMAgent
 
                 st.session_state.cam_path = CAMAgent(
@@ -579,7 +592,9 @@ elif st.session_state.step == 4:
                 ).run()
 
                 status.update(
-                    label="✅ Analysis Complete!", state="complete", expanded=False
+                    label=f"✅ Analysis Complete! `[Finished {_ts()}]`",
+                    state="complete",
+                    expanded=False,
                 )
                 st.session_state.analysis_done = True
                 st.rerun()
