@@ -1,6 +1,19 @@
 """Dashboards package for Intelli-Credit."""
 
-from dashboards.realtime_dashboard import (
-    render_live_data_panel,
-    render_live_data_summary,
+import dashboards as _root_dashboards
+import dashboards.realtime_dashboard
+import dashboards.trend_dashboard
+import dashboards.stress_testing_dashboard
+
+render_credit_command_center = _root_dashboards.render_credit_command_center
+render_risk_intelligence = _root_dashboards.render_risk_intelligence
+render_financial_health = _root_dashboards.render_financial_health
+render_specialized_monitor = _root_dashboards.render_specialized_monitor
+render_live_data_panel = dashboards.realtime_dashboard.render_live_data_panel
+render_live_data_summary = dashboards.realtime_dashboard.render_live_data_summary
+render_trend_analysis = dashboards.trend_dashboard.render_trend_analysis
+render_trend_summary_card = dashboards.trend_dashboard.render_trend_summary_card
+render_stress_testing = dashboards.stress_testing_dashboard.render_stress_testing
+render_stress_summary_card = (
+    dashboards.stress_testing_dashboard.render_stress_summary_card
 )
