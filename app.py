@@ -773,11 +773,9 @@ if st.session_state.get("analysis_done"):
     )
 
     with tabs[0]:
-        render_render_credit_command_center(sr, ml_results, fin, cname)
+        render_credit_command_center(sr, ml_results, fin, cname)
     with tabs[1]:
-        render_render_risk_intelligence(
-            sr, res, xref, cname, precognitive_signals=precog
-        )
+        render_risk_intelligence(sr, res, xref, cname, precognitive_signals=precog)
     with tabs[2]:
         st.markdown("### 🚨 Pre-Cognitive Risk Signals")
         st.info(
@@ -793,7 +791,7 @@ if st.session_state.get("analysis_done"):
                     st.write(f"**Type:** {p['type']}")
                     st.write(f"**Insight:** {p['insight']}")
     with tabs[3]:
-        render_render_financial_health(fin, sr, cname)
+        render_financial_health(fin, sr, cname)
         st.markdown("---")
         st.markdown("#### 📋 Extraction & Source Audit")
         c_a, c_b = st.columns(2)
@@ -1036,7 +1034,7 @@ if st.session_state.get("analysis_done"):
         spec_data = st.session_state.financials_all.get(
             "merged_all", st.session_state.financials_all
         )
-        render_render_specialized_monitor(spec_data, cname)
+        render_specialized_monitor(spec_data, cname)
 
     with tabs[7]:
         c_x1, c_x2 = st.columns(2)
