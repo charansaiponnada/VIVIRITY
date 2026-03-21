@@ -737,6 +737,7 @@ if st.session_state.get("analysis_done"):
             "🛡️ Risk Intel",
             "🚨 Pre-Cognitive",
             "💰 Financials",
+            "📈 Trend Analysis",
             "🔍 Specialized",
             "🔗 Cross-Ref",
             "🤖 ML",
@@ -810,6 +811,116 @@ if st.session_state.get("analysis_done"):
         st.table(rows)
 
     with tabs[4]:
+        st.markdown("### 📈 Multi-Year Trend Analysis")
+        st.caption(
+            "Historical performance analysis with CAGR, YoY growth, and momentum scoring"
+        )
+
+        trend_analysis = sr.get("trend_analysis", {})
+
+        if trend_analysis and trend_analysis.get("years_analyzed"):
+            from dashboards.trend_dashboard import render_trend_analysis
+
+            render_trend_analysis(trend_analysis, cname)
+        else:
+            st.info(
+                "Multi-year trend data not available. Upload multiple years of financial data to enable trend analysis."
+            )
+
+            if st.button("🔄 Generate Demo Trend Analysis", use_container_width=True):
+                demo_trends = {
+                    "years_analyzed": ["FY2021", "FY2022", "FY2023", "FY2024"],
+                    "yearly_summary": [
+                        {
+                            "year": "FY2021",
+                            "revenue": 450,
+                            "ebitda": 72,
+                            "pat": 25,
+                            "debt_equity": 0.8,
+                        },
+                        {
+                            "year": "FY2022",
+                            "revenue": 520,
+                            "ebitda": 88,
+                            "pat": 32,
+                            "debt_equity": 0.75,
+                        },
+                        {
+                            "year": "FY2023",
+                            "revenue": 610,
+                            "ebitda": 104,
+                            "pat": 38,
+                            "debt_equity": 0.7,
+                        },
+                        {
+                            "year": "FY2024",
+                            "revenue": 680,
+                            "ebitda": 116,
+                            "pat": 42,
+                            "debt_equity": 0.65,
+                        },
+                    ],
+                    "overall_momentum_score": 18.5,
+                    "overall_trend": "improving",
+                    "cagr_summary": [
+                        {
+                            "metric": "revenue_crores",
+                            "cagr": 14.8,
+                            "assessment": "Strong growth",
+                        },
+                        {
+                            "metric": "ebitda_crores",
+                            "cagr": 17.2,
+                            "assessment": "Strong growth",
+                        },
+                        {
+                            "metric": "pat_crores",
+                            "cagr": 18.9,
+                            "assessment": "Strong growth",
+                        },
+                    ],
+                    "key_insights": [
+                        "Revenue CAGR of 14.8% indicates strong topline growth",
+                        "EBITDA margin expanding - operational efficiency improving",
+                        "Leverage improving - debt/equity declining",
+                    ],
+                    "risk_signals": [],
+                }
+                from dashboards.trend_dashboard import render_trend_analysis
+
+                render_trend_analysis(demo_trends, cname)
+
+        st.markdown("---")
+        st.markdown("#### 📐 Trend-Adjusted Risk Factors")
+
+        trend_adjusted_score = rec.get("final_score", 0)
+        trend_adjustment = 0
+
+        if trend_analysis:
+            momentum = trend_analysis.get("overall_momentum_score", 0)
+            trend = trend_analysis.get("overall_trend", "stable")
+
+            if momentum > 20:
+                st.success(
+                    "✅ Strong positive momentum detected - positive adjustment applied"
+                )
+                trend_adjustment = 2
+            elif momentum < -20:
+                st.warning("⚠️ Negative momentum detected - risk adjustment applied")
+                trend_adjustment = -5
+            elif trend == "deteriorating":
+                st.warning("⚠️ Deteriorating trend signals - risk adjustment applied")
+                trend_adjustment = -3
+
+        adjusted_score = trend_adjusted_score + trend_adjustment
+        if trend_adjustment != 0:
+            st.metric(
+                "Trend-Adjusted Score",
+                f"{adjusted_score:.0f}/100",
+                delta=f"{trend_adjustment:+.0f} from trend analysis",
+            )
+
+    with tabs[5]:
         from dashboards import render_specialized_monitor
 
         spec_data = st.session_state.financials_all.get(
@@ -817,7 +928,7 @@ if st.session_state.get("analysis_done"):
         )
         render_specialized_monitor(spec_data, cname)
 
-    with tabs[5]:
+    with tabs[6]:
         c_x1, c_x2 = st.columns(2)
         with c_x1:
             st.markdown("#### 🔍 Cross-Document Verification")
@@ -833,7 +944,7 @@ if st.session_state.get("analysis_done"):
                 if v and k not in ["litigation_count", "severity", "source_page"]:
                     st.error(f"**{k.replace('_', ' ').title()}:** {v}")
 
-    with tabs[6]:
+    with tabs[7]:
         if ML_AVAILABLE and ml_results:
             st.markdown("### 🤖 ML Model Intelligence")
             ml_c1, ml_c2 = st.columns(2)
@@ -853,7 +964,7 @@ if st.session_state.get("analysis_done"):
         else:
             st.info("ML model results not available for this analysis.")
 
-    with tabs[7]:
+    with tabs[8]:
         if REALTIME_AVAILABLE:
             st.markdown("### 📡 Live Data Verification Panel")
             st.caption(
@@ -946,7 +1057,7 @@ if st.session_state.get("analysis_done"):
             )
             st.code("pip install httpx")
 
-    with tabs[8]:
+    with tabs[9]:
         st.markdown("### 🔌 Google A2A Protocol")
         if "a2a_thread" not in st.session_state:
             st.session_state.a2a_thread = None

@@ -7,6 +7,7 @@ Fixes applied in this version:
   #6  Loan sizing — calibrated to net worth, revenue, NBFC concentration limits
   #7  Research rating — structured signal-counting rubric
 """
+
 import os
 import re
 import json
@@ -16,28 +17,48 @@ from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
 from utils.indian_context import ENTITY_CONFIGS, get_scoring_anchors_config
 from core.risk_engine import (
-    build_risk_signal, compute_dynamic_penalty, compute_confidence,
-    compute_temporal_factor, RiskSignal, analyze_divergence,
-    optimize_credit_limit, extract_timeline, detect_fraud_signals,
-    compute_fraud_risk_level, CURRENT_YEAR,
+    build_risk_signal,
+    compute_dynamic_penalty,
+    compute_confidence,
+    compute_temporal_factor,
+    RiskSignal,
+    analyze_divergence,
+    optimize_credit_limit,
+    extract_timeline,
+    detect_fraud_signals,
+    compute_fraud_risk_level,
+    CURRENT_YEAR,
 )
 
 load_dotenv()
-OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}
+OPTIMIZED_API_FLOW = os.getenv("OPTIMIZED_API_FLOW", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
-def _gemini_with_retry(client, model: str, contents,
-                        max_retries: int = 5,
-                        fallback: str = "gemini-2.0-flash-lite"):
+def _gemini_with_retry(
+    client,
+    model: str,
+    contents,
+    max_retries: int = 5,
+    fallback: str = "gemini-2.0-flash-lite",
+):
     for attempt in range(max_retries):
         current_model = fallback if attempt == max_retries - 1 else model
         try:
-            return client.models.generate_content(model=current_model, contents=contents)
+            return client.models.generate_content(
+                model=current_model, contents=contents
+            )
         except ServerError:
             if attempt == max_retries - 1:
                 raise
             wait = 8 * (2 ** min(attempt, 3))
-            print(f"[Gemini] 503 — retrying in {wait}s (attempt {attempt+1}/{max_retries})")
+            print(
+                f"[Gemini] 503 — retrying in {wait}s (attempt {attempt + 1}/{max_retries})"
+            )
             time.sleep(wait)
         except ClientError as e:
             if "429" in str(e):
@@ -54,61 +75,87 @@ def _gemini_with_retry(client, model: str, contents,
 # Only TRUE credit-risk events are penalised. Corporate actions are EXCLUDED.
 PENALTY_RULES = {
     # Financial distress signals (from extracted document)
-    "audit_qualified":      (10, "red_flag_field",  "Audit qualified — accounting concerns"),
-    "going_concern":        (15, "red_flag_field",  "Going concern doubt — existence risk"),
-    "npa_mention":          (12, "red_flag_field",  "NPA classification mentioned"),
-    "wilful_default_doc":   (30, "keyword_search",  "Wilful default in document"),
-    "circular_trading":     (10, "keyword_search",  "Circular trading pattern detected"),
-
+    "audit_qualified": (10, "red_flag_field", "Audit qualified — accounting concerns"),
+    "going_concern": (15, "red_flag_field", "Going concern doubt — existence risk"),
+    "npa_mention": (12, "red_flag_field", "NPA classification mentioned"),
+    "wilful_default_doc": (30, "keyword_search", "Wilful default in document"),
+    "circular_trading": (10, "keyword_search", "Circular trading pattern detected"),
     # Promoter / character signals (from research)
-    "promoter_wilful":      (30, "research_field",  "Promoter on wilful defaulter list"),
-    "promoter_criminal":    (20, "research_field",  "Criminal cases against promoter"),
-    "sfio_investigation":   (15, "research_field",  "SFIO investigation ongoing"),
-
+    "promoter_wilful": (30, "research_field", "Promoter on wilful defaulter list"),
+    "promoter_criminal": (20, "research_field", "Criminal cases against promoter"),
+    "sfio_investigation": (15, "research_field", "SFIO investigation ongoing"),
     # Regulatory enforcement (from research) — NOT routine compliance
-    "sebi_enforcement":     (12, "research_field",  "SEBI enforcement order"),
-    "rbi_restriction":      (15, "research_field",  "RBI restriction / direction"),
-
+    "sebi_enforcement": (12, "research_field", "SEBI enforcement order"),
+    "rbi_restriction": (15, "research_field", "RBI restriction / direction"),
     # Legal — TRUE distress signals only
-    "ibc_cirp":             (25, "research_field",  "IBC/CIRP insolvency proceedings"),
-    "drt_cases":            ( 8, "research_field",  "DRT recovery proceedings"),
-
+    "ibc_cirp": (25, "research_field", "IBC/CIRP insolvency proceedings"),
+    "drt_cases": (8, "research_field", "DRT recovery proceedings"),
     # Cross-reference fraud flags
-    "revenue_inflation":    (12, "cross_ref_field", "Revenue inflation detected (GST vs AR mismatch)"),
-    "circular_bank":        (15, "cross_ref_field", "Circular trading (bank vs AR mismatch)"),
-
+    "revenue_inflation": (
+        12,
+        "cross_ref_field",
+        "Revenue inflation detected (GST vs AR mismatch)",
+    ),
+    "circular_bank": (15, "cross_ref_field", "Circular trading (bank vs AR mismatch)"),
     # CIBIL / credit bureau signals
-    "low_cibil_score":      (10, "cibil_field",    "CIBIL score below 650 — credit distress"),
-    "dpd_90_plus":          (15, "cibil_field",    "DPD 90+ days — loan default history"),
-    "suit_filed":           (12, "cibil_field",    "Suit filed status in CIBIL report"),
-    "wilful_default_cibil": (30, "cibil_field",    "Wilful default flagged in CIBIL"),
-
+    "low_cibil_score": (10, "cibil_field", "CIBIL score below 650 — credit distress"),
+    "dpd_90_plus": (15, "cibil_field", "DPD 90+ days — loan default history"),
+    "suit_filed": (12, "cibil_field", "Suit filed status in CIBIL report"),
+    "wilful_default_cibil": (30, "cibil_field", "Wilful default flagged in CIBIL"),
     # Manual field notes
-    "factory_idle":         (15, "manual_notes",    "Factory underutilisation / idle (Field Visit)"),
-    "mgmt_evasive":         (15, "manual_notes",    "Management evasive / uncooperative (Field Visit)"),
-    "revenue_mismatch":     (20, "manual_notes",    "Revenue mismatch / discrepancy noted (Field Visit)"),
+    "factory_idle": (
+        15,
+        "manual_notes",
+        "Factory underutilisation / idle (Field Visit)",
+    ),
+    "mgmt_evasive": (
+        15,
+        "manual_notes",
+        "Management evasive / uncooperative (Field Visit)",
+    ),
+    "revenue_mismatch": (
+        20,
+        "manual_notes",
+        "Revenue mismatch / discrepancy noted (Field Visit)",
+    ),
 }
 
 # ── EXCLUDED events — these must NEVER trigger penalties ── #
 EXCLUDED_NCLT_TYPES = [
-    "demerger", "merger", "amalgamation", "restructuring", "scheme of arrangement",
-    "capital reduction", "buy-back", "subdivision", "bonus issue",
+    "demerger",
+    "merger",
+    "amalgamation",
+    "restructuring",
+    "scheme of arrangement",
+    "capital reduction",
+    "buy-back",
+    "subdivision",
+    "bonus issue",
 ]
 
 EXCLUDED_NCLT_KEYWORDS = [
-    "demerger", "merger", "amalgamat", "scheme of arrangement",
-    "restructur", "capital reduction", "buy back", "subdivision",
-    "bonus", "split", "approval granted", "nclt approved",
+    "demerger",
+    "merger",
+    "amalgamat",
+    "scheme of arrangement",
+    "restructur",
+    "capital reduction",
+    "buy back",
+    "subdivision",
+    "bonus",
+    "split",
+    "approval granted",
+    "nclt approved",
 ]
 
 # ── Interest rate table (Base 10.5% + risk premium) ── #
 RATE_TABLE = ENTITY_CONFIGS["corporate"]["rate_table"]
 
 # ── Loan sizing parameters (RBI single-borrower exposure norms) ── #
-LOAN_NW_RATIO      = ENTITY_CONFIGS["corporate"]["loan_nw_ratio"]
-LOAN_REV_RATIO     = 0.015  # Corporate fallback
-LOAN_MAX_CAP_CR    = ENTITY_CONFIGS["corporate"]["loan_max_cap_cr"]
-LOAN_MIN_CR        = 10     # Minimum meaningful loan
+LOAN_NW_RATIO = ENTITY_CONFIGS["corporate"]["loan_nw_ratio"]
+LOAN_REV_RATIO = 0.015  # Corporate fallback
+LOAN_MAX_CAP_CR = ENTITY_CONFIGS["corporate"]["loan_max_cap_cr"]
+LOAN_MIN_CR = 10  # Minimum meaningful loan
 
 
 class ScoringAgent:
@@ -132,19 +179,29 @@ class ScoringAgent:
     - _is_excluded_nclt()        ← FIX #1 (demerger guard)
     """
 
-    def __init__(self, company_name: str, financials: dict,
-                 research: dict, manual_notes: str = "",
-                 loan_purpose: str = "", entity_type: str = "corporate",
-                 cross_ref: dict = None):
+    def __init__(
+        self,
+        company_name: str,
+        financials: dict,
+        research: dict,
+        manual_notes: str = "",
+        loan_purpose: str = "",
+        entity_type: str = "corporate",
+        cross_ref: dict = None,
+        trend_analysis: dict = None,
+    ):
         self.company_name = company_name
-        self.financials   = financials or {}
-        self.research     = research   or {}
+        self.financials = financials or {}
+        self.research = research or {}
         self.manual_notes = manual_notes or ""
         self.loan_purpose = loan_purpose or ""
-        self.entity_type  = entity_type or self.financials.get("_entity_type", "corporate")
-        self.cross_ref    = cross_ref or {}
-        self.model        = "gemini-2.5-flash"
-        self.client       = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.entity_type = entity_type or self.financials.get(
+            "_entity_type", "corporate"
+        )
+        self.cross_ref = cross_ref or {}
+        self.trend_analysis = trend_analysis or {}
+        self.model = "gemini-2.5-flash"
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     # ══════════════════════════════════════════════════════════════════════ #
     # 1. run()
@@ -153,17 +210,18 @@ class ScoringAgent:
         print(f"[ScoringAgent] Scoring {self.company_name}...")
 
         ratio_anchors = self._compute_ratio_anchors()
-        five_cs       = self.score_five_cs(ratio_anchors)
-        risk_score    = self.calculate_risk_score(five_cs)
+        five_cs = self.score_five_cs(ratio_anchors)
+        risk_score = self.calculate_risk_score(five_cs)
         recommendation = self.generate_recommendation(five_cs, risk_score)
-        swot           = self.generate_swot(five_cs, risk_score)
+        swot = self.generate_swot(five_cs, risk_score)
 
         return {
-            "five_cs":        five_cs,
-            "risk_score":     risk_score,
+            "five_cs": five_cs,
+            "risk_score": risk_score,
             "recommendation": recommendation,
-            "ratio_anchors":  ratio_anchors,
-            "swot":           swot,
+            "ratio_anchors": ratio_anchors,
+            "swot": swot,
+            "trend_analysis": self.trend_analysis,
         }
 
     # ══════════════════════════════════════════════════════════════════════ #
@@ -172,10 +230,10 @@ class ScoringAgent:
     def generate_swot(self, five_cs: dict, risk_score: dict) -> dict:
         """Synthesize financials, research, and scoring into a 4-quadrant SWOT analysis."""
         print("[ScoringAgent] Generating SWOT Analysis...")
-        
+
         fin_summary = json.dumps(self.financials, indent=2)[:3000]
-        res_summary = json.dumps(self.research,   indent=2)[:2000]
-        
+        res_summary = json.dumps(self.research, indent=2)[:2000]
+
         prompt = f"""
 You are a senior credit risk strategist. Generate a comprehensive SWOT Analysis for {self.company_name}.
 Synthesize Strengths, Weaknesses, Opportunities, and Threats from the provided data.
@@ -188,8 +246,8 @@ Research Intelligence:
 
 Risk Assessment:
 - Five Cs Scores: {json.dumps(five_cs)}
-- Final Blended Score: {risk_score.get('final_score')}/100
-- Rating: {risk_score.get('rating')}
+- Final Blended Score: {risk_score.get("final_score")}/100
+- Rating: {risk_score.get("rating")}
 
 Return ONLY valid JSON:
 {{
@@ -201,11 +259,18 @@ Return ONLY valid JSON:
 """
         try:
             response = _gemini_with_retry(self.client, self.model, prompt)
-            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            raw = re.sub(
+                r"<think>.*?</think>", "", response.text, flags=re.DOTALL
+            ).strip()
             return self._parse_json(raw)
         except Exception as e:
             print(f"[ScoringAgent] SWOT failed: {e}")
-            return {"strengths": [], "weaknesses": [], "opportunities": [], "threats": []}
+            return {
+                "strengths": [],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+            }
 
     # ══════════════════════════════════════════════════════════════════════ #
     # 2. score_five_cs()
@@ -213,20 +278,24 @@ Return ONLY valid JSON:
     def score_five_cs(self, ratio_anchors: dict = None) -> dict:
         print("[ScoringAgent] Scoring Five Cs...")
 
-        anchors     = ratio_anchors or {}
+        anchors = ratio_anchors or {}
         fin_summary = json.dumps(self.financials, indent=2)[:3000]
-        res_summary = json.dumps(self.research,   indent=2)[:2000]
-        analyst_org = "a regulated Indian financial institution" if self.entity_type in ("bank", "nbfc", "insurance") else "an Indian NBFC"
+        res_summary = json.dumps(self.research, indent=2)[:2000]
+        analyst_org = (
+            "a regulated Indian financial institution"
+            if self.entity_type in ("bank", "nbfc", "insurance")
+            else "an Indian NBFC"
+        )
 
         if self.entity_type in ("bank", "nbfc", "insurance"):
             key_ratios_block = f"""
     KEY RATIOS (mathematically computed):
-    - NIM: {anchors.get('nim','N/A')}%
-    - Gross NPA: {anchors.get('gnpa','N/A')}%
-    - Capital Adequacy: {anchors.get('car','N/A')}%
-    - ROA: {anchors.get('roa','N/A')}%
-    - ROE: {anchors.get('roe','N/A')}%
-    - Cost-to-Income: {anchors.get('cti','N/A')}%
+    - NIM: {anchors.get("nim", "N/A")}%
+    - Gross NPA: {anchors.get("gnpa", "N/A")}%
+    - Capital Adequacy: {anchors.get("car", "N/A")}%
+    - ROA: {anchors.get("roa", "N/A")}%
+    - ROE: {anchors.get("roe", "N/A")}%
+    - Cost-to-Income: {anchors.get("cti", "N/A")}%
     """
             scoring_context = """
     SCORING CONTEXT (financial institutions):
@@ -239,12 +308,12 @@ Return ONLY valid JSON:
         else:
             key_ratios_block = f"""
     KEY RATIOS (mathematically computed):
-    - ICR (EBITDA/FinCost): {anchors.get('icr','N/A')}x
-    - Debt/Equity: {anchors.get('de','N/A')}x
-    - Current Ratio: {anchors.get('cr','N/A')}x
-    - DSCR (approx): {anchors.get('dscr','N/A')}x
-    - EBITDA Margin: {anchors.get('ebitda_margin','N/A')}%
-    - ROE: {anchors.get('roe','N/A')}%
+    - ICR (EBITDA/FinCost): {anchors.get("icr", "N/A")}x
+    - Debt/Equity: {anchors.get("de", "N/A")}x
+    - Current Ratio: {anchors.get("cr", "N/A")}x
+    - DSCR (approx): {anchors.get("dscr", "N/A")}x
+    - EBITDA Margin: {anchors.get("ebitda_margin", "N/A")}%
+    - ROE: {anchors.get("roe", "N/A")}%
     """
             scoring_context = """
     SCORING CONTEXT (RBI IRAC norms):
@@ -257,11 +326,11 @@ Return ONLY valid JSON:
 
         anchor_block = f"""
 MATHEMATICALLY COMPUTED RATIO ANCHORS — HARD MINIMUM FLOORS:
-- Capacity  ≥ {anchors.get('capacity_floor',  'N/A')} — {anchors.get('capacity_reason',  '')}
-- Capital   ≥ {anchors.get('capital_floor',   'N/A')} — {anchors.get('capital_reason',   '')}
-- Character ≥ {anchors.get('character_floor', 'N/A')} — {anchors.get('character_reason', '')}
-- Collateral≥ {anchors.get('collateral_floor','N/A')} — {anchors.get('collateral_reason','')}
-{f"- EXTERNAL RATING: {anchors['external_rating_override']} → overall MUST be ≥ {anchors.get('external_rating_floor',70)}" if anchors.get('external_rating_override') else ''}
+- Capacity  ≥ {anchors.get("capacity_floor", "N/A")} — {anchors.get("capacity_reason", "")}
+- Capital   ≥ {anchors.get("capital_floor", "N/A")} — {anchors.get("capital_reason", "")}
+- Character ≥ {anchors.get("character_floor", "N/A")} — {anchors.get("character_reason", "")}
+- Collateral≥ {anchors.get("collateral_floor", "N/A")} — {anchors.get("collateral_reason", "")}
+{f"- EXTERNAL RATING: {anchors['external_rating_override']} → overall MUST be ≥ {anchors.get('external_rating_floor', 70)}" if anchors.get("external_rating_override") else ""}
 
     {key_ratios_block}
 
@@ -304,21 +373,25 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         try:
             time.sleep(3)
             response = _gemini_with_retry(self.client, self.model, prompt)
-            raw = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
+            raw = re.sub(
+                r"<think>.*?</think>", "", response.text, flags=re.DOTALL
+            ).strip()
             print(f"[DEBUG FIVE CS RAW]: {repr(raw[:300])}")
             result = self._parse_json(raw)
             if result.get("parse_error"):
                 raise ValueError("JSON parse failed")
 
-            print(f"[DEBUG FIVE CS PARSED]: capacity={result.get('capacity_score')} "
-                  f"character={result.get('character_score')} capital={result.get('capital_score')}")
+            print(
+                f"[DEBUG FIVE CS PARSED]: capacity={result.get('capacity_score')} "
+                f"character={result.get('character_score')} capital={result.get('capital_score')}"
+            )
 
             # Enforce hard floors from ratio anchors
             floors = {
-                "capacity_score":    anchors.get("capacity_floor",   0),
-                "capital_score":     anchors.get("capital_floor",    0),
-                "character_score":   anchors.get("character_floor",  0),
-                "collateral_score":  anchors.get("collateral_floor", 0),
+                "capacity_score": anchors.get("capacity_floor", 0),
+                "capital_score": anchors.get("capital_floor", 0),
+                "character_score": anchors.get("character_floor", 0),
+                "collateral_score": anchors.get("collateral_floor", 0),
             }
             for key, floor in floors.items():
                 if result.get(key, 0) < floor:
@@ -332,28 +405,47 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             print(f"[ScoringAgent] Five Cs failed: {e}")
             insufficient = "DATA INSUFFICIENT — manual review required."
             return {
-                "character_score":0,"character_rationale":insufficient,
-                "capacity_score": 0,"capacity_rationale": insufficient,
-                "capital_score":  0,"capital_rationale":  insufficient,
-                "collateral_score":0,"collateral_rationale":insufficient,
-                "conditions_score":0,"conditions_rationale":insufficient,
-                "scoring_failed":True,"failure_reason":str(e),
+                "character_score": 0,
+                "character_rationale": insufficient,
+                "capacity_score": 0,
+                "capacity_rationale": insufficient,
+                "capital_score": 0,
+                "capital_rationale": insufficient,
+                "collateral_score": 0,
+                "collateral_rationale": insufficient,
+                "conditions_score": 0,
+                "conditions_rationale": insufficient,
+                "scoring_failed": True,
+                "failure_reason": str(e),
             }
 
     # ══════════════════════════════════════════════════════════════════════ #
     # 3. calculate_risk_score()
     # ══════════════════════════════════════════════════════════════════════ #
     def calculate_risk_score(self, five_cs: dict) -> dict:
-        weights = {"capacity":0.30,"character":0.25,"capital":0.20,"collateral":0.15,"conditions":0.10}
+        weights = {
+            "capacity": 0.30,
+            "character": 0.25,
+            "capital": 0.20,
+            "collateral": 0.15,
+            "conditions": 0.10,
+        }
 
         if five_cs.get("scoring_failed"):
             return {
-                "raw_scores":{c:0 for c in weights}, "weights":weights,
-                "weighted_score":0, "penalty_applied":0, "final_score":0,
-                "rating":"UNRATED", "scoring_failed":True,
-                "failure_reason":five_cs.get("failure_reason","AI unavailable"),
-                "score_breakdown":{c:{"score":0,"weight":weights[c],"contribution":0} for c in weights},
-                "penalty_breakdown":[],
+                "raw_scores": {c: 0 for c in weights},
+                "weights": weights,
+                "weighted_score": 0,
+                "penalty_applied": 0,
+                "final_score": 0,
+                "rating": "UNRATED",
+                "scoring_failed": True,
+                "failure_reason": five_cs.get("failure_reason", "AI unavailable"),
+                "score_breakdown": {
+                    c: {"score": 0, "weight": weights[c], "contribution": 0}
+                    for c in weights
+                },
+                "penalty_breakdown": [],
             }
 
         scores = {c: max(five_cs.get(f"{c}_score", 1), 1) for c in weights}
@@ -361,18 +453,22 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
 
         penalty, penalty_breakdown = self._calculate_penalties()
         final_score = max(0, weighted_score - penalty)
-        rating      = self._score_to_rating(final_score)
+        rating = self._score_to_rating(final_score)
 
         return {
-            "raw_scores":      scores,
-            "weights":         weights,
-            "weighted_score":  round(weighted_score, 2),
+            "raw_scores": scores,
+            "weights": weights,
+            "weighted_score": round(weighted_score, 2),
             "penalty_applied": round(penalty, 2),
             "penalty_breakdown": penalty_breakdown,
-            "final_score":     round(final_score, 2),
-            "rating":          rating,
+            "final_score": round(final_score, 2),
+            "rating": rating,
             "score_breakdown": {
-                c: {"score":scores[c],"weight":weights[c],"contribution":round(scores[c]*weights[c],2)}
+                c: {
+                    "score": scores[c],
+                    "weight": weights[c],
+                    "contribution": round(scores[c] * weights[c], 2),
+                }
                 for c in weights
             },
         }
@@ -380,26 +476,35 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
     # ══════════════════════════════════════════════════════════════════════ #
     # 4. generate_recommendation()  — now uses blended score
     # ══════════════════════════════════════════════════════════════════════ #
-    def generate_recommendation(self, five_cs: dict, risk_score: dict,
-                                 ml_results: dict = None) -> dict:
+    def generate_recommendation(
+        self, five_cs: dict, risk_score: dict, ml_results: dict = None
+    ) -> dict:
         print("[ScoringAgent] Generating recommendation...")
-        analyst_org = "a regulated Indian financial institution" if self.entity_type in ("bank", "nbfc", "insurance") else "an Indian NBFC"
+        analyst_org = (
+            "a regulated Indian financial institution"
+            if self.entity_type in ("bank", "nbfc", "insurance")
+            else "an Indian NBFC"
+        )
 
         if risk_score.get("scoring_failed"):
             return {
                 "decision": "CANNOT_ASSESS",
                 "decision_rationale": f"AI scoring failed: {risk_score.get('failure_reason')}. Manual review required.",
-                "recommended_amount_crores": None, "interest_rate_percent": None,
+                "recommended_amount_crores": None,
+                "interest_rate_percent": None,
                 "tenure_months": None,
-                "key_conditions": ["Manual underwriter review mandatory before any disbursement"],
+                "key_conditions": [
+                    "Manual underwriter review mandatory before any disbursement"
+                ],
                 "rejection_reason": "System could not complete automated scoring.",
-                "final_score": 0, "rating": "UNRATED",
+                "final_score": 0,
+                "rating": "UNRATED",
             }
 
         # FIX #2 — Blend Five Cs + ML scores
         blend = self._blend_scores(risk_score, ml_results)
         final_score = blend["blended_score"]
-        rating      = self._score_to_rating(final_score)
+        rating = self._score_to_rating(final_score)
 
         # ── HARD STOP LOGIC (Automatic Rejection for High-Risk Signals) ── #
         hard_rejection = False
@@ -409,33 +514,66 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # 1. Wilful Defaulter (RBI Mandatory)
         rf = self.financials.get("red_flags", {})
         promoter = self.research.get("promoter_background", {})
-        if promoter.get("wilful_defaulter") or rf.get("wilful_default_cibil") or "wilful" in notes_lower:
+        if (
+            promoter.get("wilful_defaulter")
+            or rf.get("wilful_default_cibil")
+            or "wilful" in notes_lower
+        ):
             hard_rejection = True
-            rejection_triggers.append("Wilful Defaulter status detected (RBI Hard Stop)")
+            rejection_triggers.append(
+                "Wilful Defaulter status detected (RBI Hard Stop)"
+            )
 
         # 2. Suspected Fraud / Circular Trading (Cross-Ref or Notes)
-        if self.cross_ref.get("circular_trading_risk") == "High" or \
-           any(w in notes_lower for w in ["circular", "round-trip", "round trip", "suspicious transaction"]):
+        if self.cross_ref.get("circular_trading_risk") == "High" or any(
+            w in notes_lower
+            for w in ["circular", "round-trip", "round trip", "suspicious transaction"]
+        ):
             hard_rejection = True
-            rejection_triggers.append("High risk of circular trading / round-tripping detected")
+            rejection_triggers.append(
+                "High risk of circular trading / round-tripping detected"
+            )
 
         # 3. Massive Revenue Inflation (Cross-Ref or Notes)
-        if self.cross_ref.get("revenue_inflation_risk") == "High" or \
-           any(w in notes_lower for w in ["inflated", "mismatch", "discrepancy", "fake invoice", "window dressing"]):
+        if self.cross_ref.get("revenue_inflation_risk") == "High" or any(
+            w in notes_lower
+            for w in [
+                "inflated",
+                "mismatch",
+                "discrepancy",
+                "fake invoice",
+                "window dressing",
+            ]
+        ):
             hard_rejection = True
-            rejection_triggers.append("Significant revenue inflation risk / integrity concern")
-        
+            rejection_triggers.append(
+                "Significant revenue inflation risk / integrity concern"
+            )
+
         # 4. Severe Management Integrity Issues
-        if any(w in notes_lower for w in ["evasive", "uncooperative", "refused", "avoided", "lack of transparency"]):
+        if any(
+            w in notes_lower
+            for w in [
+                "evasive",
+                "uncooperative",
+                "refused",
+                "avoided",
+                "lack of transparency",
+            ]
+        ):
             hard_rejection = True
-            rejection_triggers.append("Management evasive / Lack of transparency (Field Visit)")
+            rejection_triggers.append(
+                "Management evasive / Lack of transparency (Field Visit)"
+            )
 
         # Decision logic
         if hard_rejection:
             decision = "REJECT"
         elif final_score >= 75:
             decision = "APPROVE"
-        elif final_score >= 50: # Restored from 60 to allow B rating (50-60) as CONDITIONAL_APPROVE
+        elif (
+            final_score >= 50
+        ):  # Restored from 60 to allow B rating (50-60) as CONDITIONAL_APPROVE
             decision = "CONDITIONAL_APPROVE"
         else:
             decision = "REJECT"
@@ -444,7 +582,9 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             decision = "REJECT"
             rejection_triggers.append(f"Credit rating {rating} below lending threshold")
 
-        rate_table = ENTITY_CONFIGS.get(self.entity_type, ENTITY_CONFIGS["corporate"]).get("rate_table", RATE_TABLE)
+        rate_table = ENTITY_CONFIGS.get(
+            self.entity_type, ENTITY_CONFIGS["corporate"]
+        ).get("rate_table", RATE_TABLE)
         rate = rate_table.get(rating)
 
         # FIX #6 — calibrated loan amount
@@ -470,7 +610,13 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
                 "interest_rate_percent": rate if decision != "REJECT" else None,
                 "tenure_months": tenure if decision != "REJECT" else None,
                 "key_conditions": [],
-                "rejection_reason": "; ".join(rejection_triggers) if hard_rejection else ("Credit score below minimum threshold." if decision == "REJECT" else None),
+                "rejection_reason": "; ".join(rejection_triggers)
+                if hard_rejection
+                else (
+                    "Credit score below minimum threshold."
+                    if decision == "REJECT"
+                    else None
+                ),
             }
         else:
             prompt = f"""
@@ -483,13 +629,13 @@ Five Cs Assessment:
 Blended Risk Score: {final_score}/100
 Rating: {rating}
 Decision (pre-determined): {decision}
-Interest Rate: {rate or 'REJECT'}%
+Interest Rate: {rate or "REJECT"}%
 Recommended Loan Amount: ₹{amount} Cr
 Recommended Tenure: {tenure} months
-Loan Purpose: {self.loan_purpose or 'Not specified'}
-Research Rating: {research_rating['grade']}
-Penalty Applied: {risk_score['penalty_applied']} pts — {[p['label'] for p in risk_score.get('penalty_breakdown', [])]}
-Model Divergence: {blend.get('divergence_alert', 'None')}
+Loan Purpose: {self.loan_purpose or "Not specified"}
+Research Rating: {research_rating["grade"]}
+Penalty Applied: {risk_score["penalty_applied"]} pts — {[p["label"] for p in risk_score.get("penalty_breakdown", [])]}
+Model Divergence: {blend.get("divergence_alert", "None")}
 
 Manual field notes: {self.manual_notes or "None"}
 
@@ -511,37 +657,45 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
 """
             time.sleep(3)
             response = _gemini_with_retry(self.client, self.model, prompt)
-            raw      = re.sub(r'<think>.*?</think>', '', response.text, flags=re.DOTALL).strip()
-            result   = self._parse_json(raw)
+            raw = re.sub(
+                r"<think>.*?</think>", "", response.text, flags=re.DOTALL
+            ).strip()
+            result = self._parse_json(raw)
 
         # Hard-set computed values — Gemini cannot override these
-        result["decision"]                  = decision
-        result["final_score"]               = round(final_score, 2)
-        result["rating"]                    = rating
-        result["blend_details"]             = blend
-        result["research_rating"]           = research_rating
+        result["decision"] = decision
+        result["final_score"] = round(final_score, 2)
+        result["rating"] = rating
+        result["blend_details"] = blend
+        result["research_rating"] = research_rating
 
         if decision == "REJECT":
             result["recommended_amount_crores"] = 0
-            result["interest_rate_percent"]     = None
-            result["tenure_months"]             = None
+            result["interest_rate_percent"] = None
+            result["tenure_months"] = None
             if not result.get("rejection_reason"):
-                result["rejection_reason"] = result.get("decision_rationale", "Credit score below minimum threshold.")
+                result["rejection_reason"] = result.get(
+                    "decision_rationale", "Credit score below minimum threshold."
+                )
         else:
-            result["interest_rate_percent"]     = rate
+            result["interest_rate_percent"] = rate
             result["recommended_amount_crores"] = amount
-            result["tenure_months"]             = tenure
+            result["tenure_months"] = tenure
 
         # ── Advanced Intelligence Outputs ──────────────────────────────── #
 
         # Model Divergence Detection
         ml_dec = (ml_results or {}).get("ml_decision", decision)
-        ml_sc  = (ml_results or {}).get("ml_score", final_score)
+        ml_sc = (ml_results or {}).get("ml_score", final_score)
         fivecs_sc = risk_score.get("final_score", final_score)
         result["divergence_report"] = analyze_divergence(
-            fivecs_sc, self._score_to_rating(fivecs_sc) if fivecs_sc >= 50 else "REJECT",
-            ml_sc, ml_dec, final_score,
-            financials=self.financials, research=self.research,
+            fivecs_sc,
+            self._score_to_rating(fivecs_sc) if fivecs_sc >= 50 else "REJECT",
+            ml_sc,
+            ml_dec,
+            final_score,
+            financials=self.financials,
+            research=self.research,
         ).to_dict()
 
         # Credit Limit Optimizer
@@ -550,21 +704,29 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         except (ValueError, TypeError):
             req_amt = 0
         result["credit_limit"] = optimize_credit_limit(
-            self.financials, {"recommendation": result, "risk_score": risk_score},
-            requested_amount=req_amt, sector=self.research.get("sector_headwinds", {}).get("sector_health", ""),
+            self.financials,
+            {"recommendation": result, "risk_score": risk_score},
+            requested_amount=req_amt,
+            sector=self.research.get("sector_headwinds", {}).get("sector_health", ""),
         ).to_dict()
 
         # Corporate Risk Timeline
-        result["risk_timeline"] = [e.to_dict() for e in extract_timeline(self.research, self.financials)]
+        result["risk_timeline"] = [
+            e.to_dict() for e in extract_timeline(self.research, self.financials)
+        ]
 
         # Fraud Signal Detection
         cross_ref_data = self.research.get("cross_reference", {})
-        fraud_signals = detect_fraud_signals(self.financials, cross_ref_data, self.research)
+        fraud_signals = detect_fraud_signals(
+            self.financials, cross_ref_data, self.research
+        )
         result["fraud_signals"] = [f.to_dict() for f in fraud_signals]
         result["fraud_risk_level"] = compute_fraud_risk_level(fraud_signals)
 
         # Risk Signals (with confidence + source transparency)
-        result["risk_signals_detail"] = [s.to_dict() for s in getattr(self, "_risk_signals", [])]
+        result["risk_signals_detail"] = [
+            s.to_dict() for s in getattr(self, "_risk_signals", [])
+        ]
 
         return result
 
@@ -590,33 +752,73 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         def _year_from_summary(domain_key: str) -> int | None:
             """Try to extract event year from research summary text."""
             summary = self.research.get(domain_key, {}).get("summary", "")
-            years = re.findall(r'\b(20[0-2]\d)\b', summary)
+            years = re.findall(r"\b(20[0-2]\d)\b", summary)
             return int(years[0]) if years else None
 
         # ── Financial document red flags ─────────────────────────────── #
         rf = self.financials.get("red_flags", {})
         if rf.get("audit_qualified"):
-            risk_signals.append(build_risk_signal(
-                "Audit Qualified", "financial", "Audit qualified — accounting concerns",
-                "Annual Report — Auditor's Report", 10, severity="HIGH", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Audit Qualified",
+                    "financial",
+                    "Audit qualified — accounting concerns",
+                    "Annual Report — Auditor's Report",
+                    10,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
         if rf.get("going_concern_issue"):
-            risk_signals.append(build_risk_signal(
-                "Going Concern", "financial", "Going concern doubt — existence risk",
-                "Annual Report — Auditor's Report", 15, severity="CRITICAL", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Going Concern",
+                    "financial",
+                    "Going concern doubt — existence risk",
+                    "Annual Report — Auditor's Report",
+                    15,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
         if rf.get("npa_mention"):
-            risk_signals.append(build_risk_signal(
-                "NPA Mention", "financial", "NPA classification mentioned",
-                "Annual Report — Financial Statements", 12, severity="HIGH", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "NPA Mention",
+                    "financial",
+                    "NPA classification mentioned",
+                    "Annual Report — Financial Statements",
+                    12,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
 
         rf_str = json.dumps(rf).lower()
         if "wilful default" in rf_str:
-            risk_signals.append(build_risk_signal(
-                "Wilful Default (Document)", "financial", "Wilful default mentioned in document",
-                "Annual Report", 30, severity="CRITICAL", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Wilful Default (Document)",
+                    "financial",
+                    "Wilful default mentioned in document",
+                    "Annual Report",
+                    30,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
         if "circular trading" in rf_str:
-            risk_signals.append(build_risk_signal(
-                "Circular Trading (Document)", "fraud", "Circular trading pattern detected in document",
-                "Annual Report — Notes", 10, severity="HIGH", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Circular Trading (Document)",
+                    "fraud",
+                    "Circular trading pattern detected in document",
+                    "Annual Report — Notes",
+                    10,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
 
         # ── Promoter background ───────────────────────────────────────── #
         promoter = self.research.get("promoter_background", {})
@@ -624,133 +826,303 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         if promoter.get("wilful_defaulter"):
             # Count sources: if multiple research domains confirm, increase confidence
             sources = 1 + (1 if rf.get("wilful_default_cibil") else 0)
-            risk_signals.append(build_risk_signal(
-                "Promoter Wilful Defaulter", "promoter",
-                "Promoter on RBI wilful defaulter list",
-                "RBI Wilful Defaulter List / CIBIL", 30,
-                severity="CRITICAL", sources_found=sources, event_year=promo_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "Promoter Wilful Defaulter",
+                    "promoter",
+                    "Promoter on RBI wilful defaulter list",
+                    "RBI Wilful Defaulter List / CIBIL",
+                    30,
+                    severity="CRITICAL",
+                    sources_found=sources,
+                    event_year=promo_year,
+                )
+            )
         if promoter.get("criminal_cases"):
-            risk_signals.append(build_risk_signal(
-                "Promoter Criminal Cases", "promoter",
-                "Criminal cases against promoter directors",
-                "e-Courts / News Reports", 20,
-                severity="HIGH", sources_found=1, event_year=promo_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "Promoter Criminal Cases",
+                    "promoter",
+                    "Criminal cases against promoter directors",
+                    "e-Courts / News Reports",
+                    20,
+                    severity="HIGH",
+                    sources_found=1,
+                    event_year=promo_year,
+                )
+            )
         if promoter.get("sfio_investigation"):
-            risk_signals.append(build_risk_signal(
-                "SFIO Investigation", "promoter",
-                "Serious Fraud Investigation Office investigation active",
-                "MCA / SFIO Database", 15,
-                severity="HIGH", sources_found=1, event_year=promo_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "SFIO Investigation",
+                    "promoter",
+                    "Serious Fraud Investigation Office investigation active",
+                    "MCA / SFIO Database",
+                    15,
+                    severity="HIGH",
+                    sources_found=1,
+                    event_year=promo_year,
+                )
+            )
 
         # ── Regulatory enforcement ────────────────────────────────────── #
         reg = self.research.get("regulatory", {})
         reg_year = _year_from_summary("regulatory")
         if reg.get("sebi_actions") and not reg.get("sebi_settlement"):
-            risk_signals.append(build_risk_signal(
-                "SEBI Enforcement", "regulatory",
-                "SEBI enforcement order (unsettled)",
-                "SEBI Order Database", 12,
-                severity="HIGH", sources_found=1, event_year=reg_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "SEBI Enforcement",
+                    "regulatory",
+                    "SEBI enforcement order (unsettled)",
+                    "SEBI Order Database",
+                    12,
+                    severity="HIGH",
+                    sources_found=1,
+                    event_year=reg_year,
+                )
+            )
         if reg.get("rbi_issues"):
-            risk_signals.append(build_risk_signal(
-                "RBI Direction", "regulatory",
-                "RBI restriction / regulatory direction",
-                "RBI Circulars / Directions", 15,
-                severity="HIGH", sources_found=1, event_year=reg_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "RBI Direction",
+                    "regulatory",
+                    "RBI restriction / regulatory direction",
+                    "RBI Circulars / Directions",
+                    15,
+                    severity="HIGH",
+                    sources_found=1,
+                    event_year=reg_year,
+                )
+            )
 
         # ── Legal proceedings — ONLY confirmed distress ───────────────── #
-        litigation = self.research.get("litigation") or self.research.get("legal_disputes", {})
+        litigation = self.research.get("litigation") or self.research.get(
+            "legal_disputes", {}
+        )
         lit_year = _year_from_summary("legal_disputes")
 
         if litigation.get("ibc_cirp"):
-            risk_signals.append(build_risk_signal(
-                "IBC/CIRP Proceedings", "litigation",
-                "IBC/CIRP insolvency proceedings active",
-                "NCLT Database / IBBI", 25,
-                severity="CRITICAL", sources_found=1, event_year=lit_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "IBC/CIRP Proceedings",
+                    "litigation",
+                    "IBC/CIRP insolvency proceedings active",
+                    "NCLT Database / IBBI",
+                    25,
+                    severity="CRITICAL",
+                    sources_found=1,
+                    event_year=lit_year,
+                )
+            )
 
         if litigation.get("nclt_proceedings"):
             if not self._is_excluded_nclt(litigation):
                 nclt_type = litigation.get("nclt_type", "unknown")
-                risk_signals.append(build_risk_signal(
-                    f"NCLT Proceedings ({nclt_type})", "litigation",
-                    f"NCLT proceedings — confirmed distress (type: {nclt_type})",
-                    "NCLT Database", 20,
-                    severity="HIGH", sources_found=1, event_year=lit_year))
+                risk_signals.append(
+                    build_risk_signal(
+                        f"NCLT Proceedings ({nclt_type})",
+                        "litigation",
+                        f"NCLT proceedings — confirmed distress (type: {nclt_type})",
+                        "NCLT Database",
+                        20,
+                        severity="HIGH",
+                        sources_found=1,
+                        event_year=lit_year,
+                    )
+                )
             else:
                 nclt_type = litigation.get("nclt_type", "")
                 print(f"  [Penalty] NCLT excluded — corporate action: {nclt_type}")
 
         if litigation.get("drt_cases"):
-            risk_signals.append(build_risk_signal(
-                "DRT Recovery", "litigation",
-                "DRT debt recovery proceedings",
-                "DRT Database", 8,
-                severity="MEDIUM", sources_found=1, event_year=lit_year))
+            risk_signals.append(
+                build_risk_signal(
+                    "DRT Recovery",
+                    "litigation",
+                    "DRT debt recovery proceedings",
+                    "DRT Database",
+                    8,
+                    severity="MEDIUM",
+                    sources_found=1,
+                    event_year=lit_year,
+                )
+            )
 
         # ── Cross-reference fraud flags ───────────────────────────────── #
         cross_ref = self.research.get("cross_reference", {})
         if cross_ref.get("circular_trading_risk") == "High":
-            risk_signals.append(build_risk_signal(
-                "Circular Trading (Cross-Ref)", "fraud",
-                "Circular trading risk detected via cross-reference",
-                "Cross-Reference Analysis (Bank vs Annual Report)", 15,
-                severity="HIGH", sources_found=2))
+            risk_signals.append(
+                build_risk_signal(
+                    "Circular Trading (Cross-Ref)",
+                    "fraud",
+                    "Circular trading risk detected via cross-reference",
+                    "Cross-Reference Analysis (Bank vs Annual Report)",
+                    15,
+                    severity="HIGH",
+                    sources_found=2,
+                )
+            )
         if cross_ref.get("revenue_inflation_risk") == "High":
-            risk_signals.append(build_risk_signal(
-                "Revenue Inflation (Cross-Ref)", "fraud",
-                "Revenue inflation detected via GST vs AR mismatch",
-                "Cross-Reference Analysis (GST vs Annual Report)", 12,
-                severity="HIGH", sources_found=2))
+            risk_signals.append(
+                build_risk_signal(
+                    "Revenue Inflation (Cross-Ref)",
+                    "fraud",
+                    "Revenue inflation detected via GST vs AR mismatch",
+                    "Cross-Reference Analysis (GST vs Annual Report)",
+                    12,
+                    severity="HIGH",
+                    sources_found=2,
+                )
+            )
 
         # ── CIBIL / credit bureau flags ───────────────────────────────── #
         cibil_rf = self.financials.get("red_flags", {})
         if cibil_rf.get("low_cibil_score"):
-            risk_signals.append(build_risk_signal(
-                "Low CIBIL Score", "financial",
-                "CIBIL score below 650 — credit distress",
-                "CIBIL Commercial Report", 10,
-                severity="HIGH", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Low CIBIL Score",
+                    "financial",
+                    "CIBIL score below 650 — credit distress",
+                    "CIBIL Commercial Report",
+                    10,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
         if cibil_rf.get("dpd_90_plus"):
-            risk_signals.append(build_risk_signal(
-                "DPD 90+", "financial",
-                "DPD 90+ days — loan default history",
-                "CIBIL Commercial Report", 15,
-                severity="CRITICAL", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "DPD 90+",
+                    "financial",
+                    "DPD 90+ days — loan default history",
+                    "CIBIL Commercial Report",
+                    15,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
         if cibil_rf.get("suit_filed"):
-            risk_signals.append(build_risk_signal(
-                "Suit Filed", "litigation",
-                "Suit filed status in CIBIL report",
-                "CIBIL Commercial Report", 12,
-                severity="HIGH", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Suit Filed",
+                    "litigation",
+                    "Suit filed status in CIBIL report",
+                    "CIBIL Commercial Report",
+                    12,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
         if cibil_rf.get("wilful_default_cibil"):
-            risk_signals.append(build_risk_signal(
-                "Wilful Default (CIBIL)", "financial",
-                "Wilful default flagged in CIBIL",
-                "CIBIL Commercial Report", 30,
-                severity="CRITICAL", sources_found=1))
+            risk_signals.append(
+                build_risk_signal(
+                    "Wilful Default (CIBIL)",
+                    "financial",
+                    "Wilful default flagged in CIBIL",
+                    "CIBIL Commercial Report",
+                    30,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
 
         # ── Manual field notes ────────────────────────────────────────── #
         if self.manual_notes:
             n = self.manual_notes.lower()
-            if any(w in n for w in ["idle","shutdown","operating at","% capacity","underutil","shut down"]):
-                risk_signals.append(build_risk_signal(
-                    "Factory Underutilisation", "financial",
-                    "Factory underutilisation / capacity concern (Field Visit)",
-                    "Credit Officer Field Notes", 15,
-                    severity="HIGH", sources_found=1))
-            if any(w in n for w in ["evasive","uncooperative","refused","avoided"]):
-                risk_signals.append(build_risk_signal(
-                    "Management Evasion", "promoter",
-                    "Management evasive / uncooperative during interview (Field Visit)",
-                    "Credit Officer Field Notes", 15,
-                    severity="HIGH", sources_found=1))
-            if any(w in n for w in ["inflated","mismatch","discrepancy","round-trip","circular"]):
-                risk_signals.append(build_risk_signal(
-                    "Fraud/Integrity Concern (Field)", "fraud",
-                    "Revenue mismatch / circular trading concern from field visit",
-                    "Credit Officer Field Notes", 20,
-                    severity="CRITICAL", sources_found=1))
+            if any(
+                w in n
+                for w in [
+                    "idle",
+                    "shutdown",
+                    "operating at",
+                    "% capacity",
+                    "underutil",
+                    "shut down",
+                ]
+            ):
+                risk_signals.append(
+                    build_risk_signal(
+                        "Factory Underutilisation",
+                        "financial",
+                        "Factory underutilisation / capacity concern (Field Visit)",
+                        "Credit Officer Field Notes",
+                        15,
+                        severity="HIGH",
+                        sources_found=1,
+                    )
+                )
+            if any(w in n for w in ["evasive", "uncooperative", "refused", "avoided"]):
+                risk_signals.append(
+                    build_risk_signal(
+                        "Management Evasion",
+                        "promoter",
+                        "Management evasive / uncooperative during interview (Field Visit)",
+                        "Credit Officer Field Notes",
+                        15,
+                        severity="HIGH",
+                        sources_found=1,
+                    )
+                )
+            if any(
+                w in n
+                for w in [
+                    "inflated",
+                    "mismatch",
+                    "discrepancy",
+                    "round-trip",
+                    "circular",
+                ]
+            ):
+                risk_signals.append(
+                    build_risk_signal(
+                        "Fraud/Integrity Concern (Field)",
+                        "fraud",
+                        "Revenue mismatch / circular trading concern from field visit",
+                        "Credit Officer Field Notes",
+                        20,
+                        severity="CRITICAL",
+                        sources_found=1,
+                    )
+                )
+
+        # ── Trend Analysis Risk Signals (Multi-Year) ──────────────────── #
+        trend = self.trend_analysis or {}
+        if trend.get("overall_trend") == "deteriorating":
+            risk_signals.append(
+                build_risk_signal(
+                    "Negative Momentum Trend",
+                    "financial",
+                    f"Momentum score {trend.get('overall_momentum_score', 0):.1f} — overall deteriorating trend",
+                    "Multi-Year Trend Analysis",
+                    12,
+                    severity="HIGH",
+                    sources_found=1,
+                )
+            )
+        if trend.get("overall_momentum_score", 0) < -30:
+            risk_signals.append(
+                build_risk_signal(
+                    "Severe Negative Momentum",
+                    "financial",
+                    f"Momentum score {trend.get('overall_momentum_score', 0):.1f} — significant decline trajectory",
+                    "Multi-Year Trend Analysis",
+                    18,
+                    severity="CRITICAL",
+                    sources_found=1,
+                )
+            )
+        for risk in trend.get("risk_signals", [])[:3]:
+            risk_signals.append(
+                build_risk_signal(
+                    "Trend Risk Signal",
+                    "financial",
+                    risk,
+                    "Multi-Year Trend Analysis",
+                    8,
+                    severity="MEDIUM",
+                    sources_found=1,
+                )
+            )
 
         # Sum adjusted penalties (dynamic: severity × confidence × temporal)
         raw_penalty = sum(s.adjusted_penalty for s in risk_signals)
@@ -763,20 +1135,24 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         # Build backward-compatible breakdown + enriched signals list
         breakdown = []
         for s in risk_signals:
-            breakdown.append({
-                "points": s.adjusted_penalty,
-                "label": s.description,
-                "signal_type": s.signal_type,
-                "source": s.source,
-                "confidence": s.confidence,
-                "severity": s.severity,
-                "base_penalty": s.base_penalty,
-                "confidence_factor": s.confidence_factor,
-                "temporal_factor": s.temporal_factor,
-                "event_year": s.event_year,
-                "category": s.category,
-            })
-            print(f"  [Penalty] {s.signal_type}: base={s.base_penalty} × sev × conf({s.confidence_factor}) × temp({s.temporal_factor}) = {s.adjusted_penalty}")
+            breakdown.append(
+                {
+                    "points": s.adjusted_penalty,
+                    "label": s.description,
+                    "signal_type": s.signal_type,
+                    "source": s.source,
+                    "confidence": s.confidence,
+                    "severity": s.severity,
+                    "base_penalty": s.base_penalty,
+                    "confidence_factor": s.confidence_factor,
+                    "temporal_factor": s.temporal_factor,
+                    "event_year": s.event_year,
+                    "category": s.category,
+                }
+            )
+            print(
+                f"  [Penalty] {s.signal_type}: base={s.base_penalty} × sev × conf({s.confidence_factor}) × temp({s.temporal_factor}) = {s.adjusted_penalty}"
+            )
 
         # Store risk signals for dashboard access
         self._risk_signals = risk_signals
@@ -790,8 +1166,8 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         (demerger, merger, restructuring) — these should NOT be penalised.
         """
         nclt_type = (litigation.get("nclt_type") or "").lower()
-        summary   = (litigation.get("summary")   or "").lower()
-        combined  = nclt_type + " " + summary
+        summary = (litigation.get("summary") or "").lower()
+        combined = nclt_type + " " + summary
 
         # Check against excluded event types
         if any(excl in combined for excl in EXCLUDED_NCLT_KEYWORDS):
@@ -799,8 +1175,15 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
 
         # Extra safety: if insolvency keywords are present, it IS distress
         distress_keywords = [
-            "insolvency", "liquidation", "winding up", "resolution professional",
-            "moratorium", "cirp", "ibc", "corporate debtor", "suspended board",
+            "insolvency",
+            "liquidation",
+            "winding up",
+            "resolution professional",
+            "moratorium",
+            "cirp",
+            "ibc",
+            "corporate debtor",
+            "suspended board",
         ]
         if any(kw in combined for kw in distress_keywords):
             return False
@@ -826,20 +1209,20 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
 
         if not ml_results or ml_results.get("scoring_failed"):
             return {
-                "blended_score":   fivecs_score,
-                "fivecs_score":    fivecs_score,
-                "ml_score":        None,
-                "blend_method":    "Five Cs only (ML unavailable)",
+                "blended_score": fivecs_score,
+                "fivecs_score": fivecs_score,
+                "ml_score": None,
+                "blend_method": "Five Cs only (ML unavailable)",
                 "divergence_alert": None,
-                "weights_used":    {"fivecs": 1.0, "ml": 0.0},
+                "weights_used": {"fivecs": 1.0, "ml": 0.0},
             }
 
         ml_score = ml_results.get("ml_score", 0)
 
         # Blending
         W_FIVECS = 0.55
-        W_ML     = 0.45
-        blended  = round(W_FIVECS * fivecs_score + W_ML * ml_score, 2)
+        W_ML = 0.45
+        blended = round(W_FIVECS * fivecs_score + W_ML * ml_score, 2)
 
         divergence = abs(fivecs_score - ml_score)
         alert = None
@@ -858,16 +1241,18 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             )
             print(f"  [Blend] DIVERGENCE: {alert}")
 
-        print(f"  [Blend] FiveCs={fivecs_score:.1f} × 55% + ML={ml_score:.1f} × 45% = Blended={blended:.1f}")
+        print(
+            f"  [Blend] FiveCs={fivecs_score:.1f} × 55% + ML={ml_score:.1f} × 45% = Blended={blended:.1f}"
+        )
 
         return {
-            "blended_score":    blended,
-            "fivecs_score":     fivecs_score,
-            "ml_score":         ml_score,
-            "blend_method":     f"55% Five Cs + 45% ML (logistic regression)",
+            "blended_score": blended,
+            "fivecs_score": fivecs_score,
+            "ml_score": ml_score,
+            "blend_method": f"55% Five Cs + 45% ML (logistic regression)",
             "divergence_points": round(divergence, 1),
             "divergence_alert": alert,
-            "weights_used":     {"fivecs": W_FIVECS, "ml": W_ML},
+            "weights_used": {"fivecs": W_FIVECS, "ml": W_ML},
         }
 
     # ══════════════════════════════════════════════════════════════════════ #
@@ -887,6 +1272,7 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         For working capital specifically, also check:
           working_capital_requirement ≈ (trade_receivables + inventories) × 30%
         """
+
         def sf(key):
             try:
                 v = self.financials.get(key)
@@ -899,29 +1285,29 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         loan_assets_ratio = cfg.get("loan_assets_ratio")
         loan_max_cap_cr = cfg.get("loan_max_cap_cr", LOAN_MAX_CAP_CR)
 
-        nw  = sf("net_worth_crores")
+        nw = sf("net_worth_crores")
         rev = sf("revenue_crores")
         assets = sf("total_assets_crores")
-        tr  = sf("trade_receivables_crores")
+        tr = sf("trade_receivables_crores")
         inv = sf("inventories_crores")
 
         candidates = []
-        reasons    = []
+        reasons = []
 
         if nw and nw > 0:
             nw_amt = round(nw * loan_nw_ratio, 0)
             candidates.append(nw_amt)
-            reasons.append(f"NW×{loan_nw_ratio*100:.1f}%=₹{nw_amt:.0f}Cr")
+            reasons.append(f"NW×{loan_nw_ratio * 100:.1f}%=₹{nw_amt:.0f}Cr")
 
         if rev and rev > 0:
             rev_amt = round(rev * LOAN_REV_RATIO, 0)
             candidates.append(rev_amt)
-            reasons.append(f"Rev×{LOAN_REV_RATIO*100:.1f}%=₹{rev_amt:.0f}Cr")
+            reasons.append(f"Rev×{LOAN_REV_RATIO * 100:.1f}%=₹{rev_amt:.0f}Cr")
 
         if loan_assets_ratio and assets and assets > 0:
             assets_amt = round(assets * loan_assets_ratio, 0)
             candidates.append(assets_amt)
-            reasons.append(f"Assets×{loan_assets_ratio*100:.2f}%=₹{assets_amt:.0f}Cr")
+            reasons.append(f"Assets×{loan_assets_ratio * 100:.2f}%=₹{assets_amt:.0f}Cr")
 
         # Working capital proxy
         if tr and inv:
@@ -939,29 +1325,31 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         final_amount = max(final_amount, LOAN_MIN_CR)
         final_amount = round(final_amount, 0)
 
-        print(f"  [LoanSizing] Candidates: {reasons} → raw={raw_amount:.0f}Cr → final=₹{final_amount:.0f}Cr")
+        print(
+            f"  [LoanSizing] Candidates: {reasons} → raw={raw_amount:.0f}Cr → final=₹{final_amount:.0f}Cr"
+        )
         return final_amount
 
     # ══════════════════════════════════════════════════════════════════════ #
     # FIX #8 — Dynamic tenure based on loan purpose
     # ══════════════════════════════════════════════════════════════════════ #
     TENURE_MAP = {
-        "working capital":       12,
-        "wc":                    12,
-        "short term":            12,
-        "overdraft":             12,
-        "od":                    12,
-        "term loan":             60,
-        "capex":                 60,
-        "expansion":             60,
-        "capital expenditure":   60,
-        "project finance":       84,
-        "infrastructure":        84,
-        "acquisition":           60,
-        "refinance":             36,
-        "refinancing":           36,
-        "promoter funding":      36,
-        "general corporate":     36,
+        "working capital": 12,
+        "wc": 12,
+        "short term": 12,
+        "overdraft": 12,
+        "od": 12,
+        "term loan": 60,
+        "capex": 60,
+        "expansion": 60,
+        "capital expenditure": 60,
+        "project finance": 84,
+        "infrastructure": 84,
+        "acquisition": 60,
+        "refinance": 36,
+        "refinancing": 36,
+        "promoter funding": 36,
+        "general corporate": 36,
     }
 
     def _dynamic_tenure(self) -> int:
@@ -991,60 +1379,78 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
           C (Caution):        total ≥ -2
           D (Reject):         total <  -2
         """
-        r   = self.research
+        r = self.research
         pts = 0
         evidence = []
 
         # Positive signals
         promoter = r.get("promoter_background", {})
         if promoter.get("risk_level") == "Low":
-            pts += 2; evidence.append("+2 Clean promoter (Low risk)")
+            pts += 2
+            evidence.append("+2 Clean promoter (Low risk)")
         elif promoter.get("risk_level") == "Medium":
-            pts += 1; evidence.append("+1 Moderate promoter risk")
+            pts += 1
+            evidence.append("+1 Moderate promoter risk")
 
         mca = r.get("mca_signals", {})
         if mca.get("mca_risk") == "Low":
-            pts += 1; evidence.append("+1 Clean MCA record")
+            pts += 1
+            evidence.append("+1 Clean MCA record")
 
         reg = r.get("regulatory", {})
         if reg.get("regulatory_risk") == "Low":
-            pts += 1; evidence.append("+1 No regulatory actions")
+            pts += 1
+            evidence.append("+1 No regulatory actions")
 
         sector = r.get("sector_headwinds", {})
         if sector.get("sector_health") == "Strong":
-            pts += 2; evidence.append("+2 Strong sector")
+            pts += 2
+            evidence.append("+2 Strong sector")
         elif sector.get("sector_health") == "Stable":
-            pts += 1; evidence.append("+1 Stable sector")
+            pts += 1
+            evidence.append("+1 Stable sector")
 
         news = r.get("company_news", {})
         if news.get("sentiment") == "Positive":
-            pts += 1; evidence.append("+1 Positive news sentiment")
+            pts += 1
+            evidence.append("+1 Positive news sentiment")
         if news.get("external_credit_rating") and any(
-            x in str(news.get("external_credit_rating","")).upper()
-            for x in ["AA","AAA","A+","A "]):
-            pts += 2; evidence.append("+2 Investment-grade external rating")
+            x in str(news.get("external_credit_rating", "")).upper()
+            for x in ["AA", "AAA", "A+", "A "]
+        ):
+            pts += 2
+            evidence.append("+2 Investment-grade external rating")
 
         lit = r.get("litigation") or r.get("legal_disputes", {})
         if lit.get("litigation_risk") == "Low":
-            pts += 1; evidence.append("+1 Low litigation risk")
+            pts += 1
+            evidence.append("+1 Low litigation risk")
 
         # Negative signals
         if promoter.get("wilful_defaulter"):
-            pts -= 5; evidence.append("-5 Wilful defaulter")
+            pts -= 5
+            evidence.append("-5 Wilful defaulter")
         if promoter.get("criminal_cases"):
-            pts -= 3; evidence.append("-3 Criminal cases")
+            pts -= 3
+            evidence.append("-3 Criminal cases")
         if reg.get("sebi_actions") and not reg.get("sebi_settlement"):
-            pts -= 2; evidence.append("-2 SEBI enforcement")
+            pts -= 2
+            evidence.append("-2 SEBI enforcement")
         if reg.get("rbi_issues"):
-            pts -= 2; evidence.append("-2 RBI issues")
+            pts -= 2
+            evidence.append("-2 RBI issues")
         if lit.get("ibc_cirp"):
-            pts -= 4; evidence.append("-4 IBC/CIRP proceedings")
+            pts -= 4
+            evidence.append("-4 IBC/CIRP proceedings")
         if lit.get("drt_cases"):
-            pts -= 1; evidence.append("-1 DRT cases")
-        if sector.get("sector_health") in ("Stressed","Distressed"):
-            pts -= 2; evidence.append("-2 Stressed sector")
+            pts -= 1
+            evidence.append("-1 DRT cases")
+        if sector.get("sector_health") in ("Stressed", "Distressed"):
+            pts -= 2
+            evidence.append("-2 Stressed sector")
         if news.get("default_mentions"):
-            pts -= 3; evidence.append("-3 Default mentioned in news")
+            pts -= 3
+            evidence.append("-3 Default mentioned in news")
 
         if pts >= 6:
             grade, label = "A", "Strong Proceed"
@@ -1071,15 +1477,22 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             except Exception:
                 return None
 
-        icr    = sf("interest_coverage_ratio")
-        de     = sf("debt_equity_ratio")
-        cr     = sf("current_ratio")
-        dscr   = sf("dscr_approximate")
-        roe    = sf("return_on_equity_percent")
+        icr = sf("interest_coverage_ratio")
+        de = sf("debt_equity_ratio")
+        cr = sf("current_ratio")
+        dscr = sf("dscr_approximate")
+        roe = sf("return_on_equity_percent")
         ebitda_m = sf("ebitda_margin_percent")
-        rev    = sf("revenue_crores")
+        rev = sf("revenue_crores")
 
-        anchors = {"icr":icr,"de":de,"cr":cr,"dscr":dscr,"roe":roe,"ebitda_margin":ebitda_m}
+        anchors = {
+            "icr": icr,
+            "de": de,
+            "cr": cr,
+            "dscr": dscr,
+            "roe": roe,
+            "ebitda_margin": ebitda_m,
+        }
 
         if self.entity_type in ("bank", "nbfc", "insurance"):
             nim = sf("net_interest_margin_percent")
@@ -1090,15 +1503,17 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             solvency = sf("solvency_ratio")
             combined_ratio = sf("combined_ratio_percent")
 
-            anchors.update({
-                "nim": nim,
-                "gnpa": gnpa,
-                "car": car,
-                "roa": roa,
-                "cti": cti,
-                "solvency": solvency,
-                "combined_ratio": combined_ratio,
-            })
+            anchors.update(
+                {
+                    "nim": nim,
+                    "gnpa": gnpa,
+                    "car": car,
+                    "roa": roa,
+                    "cti": cti,
+                    "solvency": solvency,
+                    "combined_ratio": combined_ratio,
+                }
+            )
 
             cfg = get_scoring_anchors_config(self.entity_type)
 
@@ -1120,13 +1535,25 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
                 # Combined ratio is inverted (lower is better)
                 if capital_val is not None:
                     if capital_val < 95:
-                        capital_floor, capital_reason = 85, "Combined ratio <95% — highly profitable"
+                        capital_floor, capital_reason = (
+                            85,
+                            "Combined ratio <95% — highly profitable",
+                        )
                     elif capital_val < 100:
-                        capital_floor, capital_reason = 72, "Combined ratio 95-100% — profitable"
+                        capital_floor, capital_reason = (
+                            72,
+                            "Combined ratio 95-100% — profitable",
+                        )
                     elif capital_val < 110:
-                        capital_floor, capital_reason = 55, "Combined ratio 100-110% — marginal"
+                        capital_floor, capital_reason = (
+                            55,
+                            "Combined ratio 100-110% — marginal",
+                        )
                     else:
-                        capital_floor, capital_reason = 30, "Combined ratio >110% — loss-making"
+                        capital_floor, capital_reason = (
+                            30,
+                            "Combined ratio >110% — loss-making",
+                        )
             elif capital_val is not None:
                 for threshold, floor, reason in cfg.get("capital_thresholds", []):
                     if capital_val >= threshold:
@@ -1146,7 +1573,10 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             if promoter.get("wilful_defaulter"):
                 character_floor, character_reason = 10, "HARD STOP: Wilful defaulter"
             elif promoter.get("criminal_cases"):
-                character_floor, character_reason = 20, "Criminal cases against promoter"
+                character_floor, character_reason = (
+                    20,
+                    "Criminal cases against promoter",
+                )
             elif promoter.get("risk_level") == "Low":
                 character_floor, character_reason = 72, "Clean promoter profile"
             else:
@@ -1156,11 +1586,20 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             total_assets = sf("total_assets_crores")
             net_worth = sf("net_worth_crores")
             if total_assets and total_assets > 200000:
-                collateral_floor, collateral_reason = 72, f"Strong asset base: {total_assets:.0f}Cr"
+                collateral_floor, collateral_reason = (
+                    72,
+                    f"Strong asset base: {total_assets:.0f}Cr",
+                )
             elif total_assets and total_assets > 50000:
-                collateral_floor, collateral_reason = 62, f"Adequate asset base: {total_assets:.0f}Cr"
+                collateral_floor, collateral_reason = (
+                    62,
+                    f"Adequate asset base: {total_assets:.0f}Cr",
+                )
             elif net_worth and net_worth > 10000:
-                collateral_floor, collateral_reason = 55, f"Net worth support: {net_worth:.0f}Cr"
+                collateral_floor, collateral_reason = (
+                    55,
+                    f"Net worth support: {net_worth:.0f}Cr",
+                )
             else:
                 collateral_floor, collateral_reason = 40, "Limited collateral clarity"
 
@@ -1181,45 +1620,73 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
                 anchors["external_rating_override"] = ext_rating
                 anchors["external_rating_floor"] = 72
 
-            print(f"  [RatioAnchors-{self.entity_type}] CapacityFloor={capacity_floor}, CapitalFloor={capital_floor}, CharacterFloor={character_floor}")
+            print(
+                f"  [RatioAnchors-{self.entity_type}] CapacityFloor={capacity_floor}, CapitalFloor={capital_floor}, CharacterFloor={character_floor}"
+            )
             return anchors
 
         # Capacity floor
         capacity_floor, capacity_reason = 40, "No ratio data"
         if icr is not None:
-            if icr >= 10:   capacity_floor, capacity_reason = 85, f"ICR {icr:.1f}x (>10x — excellent)"
-            elif icr >= 7:  capacity_floor, capacity_reason = 80, f"ICR {icr:.1f}x (7-10x — strong)"
-            elif icr >= 5:  capacity_floor, capacity_reason = 73, f"ICR {icr:.1f}x (5-7x — good)"
-            elif icr >= 3:  capacity_floor, capacity_reason = 63, f"ICR {icr:.1f}x (3-5x — adequate)"
-            elif icr >= 1.5:capacity_floor, capacity_reason = 50, f"ICR {icr:.1f}x (marginal)"
-            else:           capacity_floor, capacity_reason = 28, f"ICR {icr:.1f}x (weak)"
+            if icr >= 10:
+                capacity_floor, capacity_reason = (
+                    85,
+                    f"ICR {icr:.1f}x (>10x — excellent)",
+                )
+            elif icr >= 7:
+                capacity_floor, capacity_reason = 80, f"ICR {icr:.1f}x (7-10x — strong)"
+            elif icr >= 5:
+                capacity_floor, capacity_reason = 73, f"ICR {icr:.1f}x (5-7x — good)"
+            elif icr >= 3:
+                capacity_floor, capacity_reason = (
+                    63,
+                    f"ICR {icr:.1f}x (3-5x — adequate)",
+                )
+            elif icr >= 1.5:
+                capacity_floor, capacity_reason = 50, f"ICR {icr:.1f}x (marginal)"
+            else:
+                capacity_floor, capacity_reason = 28, f"ICR {icr:.1f}x (weak)"
         if ebitda_m is not None:
             em_floor = 28
-            if ebitda_m >= 20:   em_floor = 80
-            elif ebitda_m >= 13: em_floor = 70
-            elif ebitda_m >= 8:  em_floor = 58
+            if ebitda_m >= 20:
+                em_floor = 80
+            elif ebitda_m >= 13:
+                em_floor = 70
+            elif ebitda_m >= 8:
+                em_floor = 58
             if em_floor > capacity_floor:
-                capacity_floor  = em_floor
+                capacity_floor = em_floor
                 capacity_reason = f"EBITDA margin {ebitda_m:.1f}%"
 
-        anchors["capacity_floor"]  = capacity_floor
+        anchors["capacity_floor"] = capacity_floor
         anchors["capacity_reason"] = capacity_reason
 
         # Capital floor
         capital_floor, capital_reason = 40, "No leverage data"
         if de is not None:
             if de == 0:
-                capital_floor, capital_reason = 90, "D/E 0.00x (debt-free balance sheet)"
-            elif de <= 0.3:   capital_floor, capital_reason = 85, f"D/E {de:.2f}x (≤0.3x very low)"
-            elif de <= 0.75:capital_floor, capital_reason = 75, f"D/E {de:.2f}x (0.3-0.75x low)"
-            elif de <= 1.5: capital_floor, capital_reason = 62, f"D/E {de:.2f}x (0.75-1.5x moderate)"
-            elif de <= 3:   capital_floor, capital_reason = 48, f"D/E {de:.2f}x (1.5-3x high)"
-            else:           capital_floor, capital_reason = 28, f"D/E {de:.2f}x (>3x very high)"
+                capital_floor, capital_reason = (
+                    90,
+                    "D/E 0.00x (debt-free balance sheet)",
+                )
+            elif de <= 0.3:
+                capital_floor, capital_reason = 85, f"D/E {de:.2f}x (≤0.3x very low)"
+            elif de <= 0.75:
+                capital_floor, capital_reason = 75, f"D/E {de:.2f}x (0.3-0.75x low)"
+            elif de <= 1.5:
+                capital_floor, capital_reason = (
+                    62,
+                    f"D/E {de:.2f}x (0.75-1.5x moderate)",
+                )
+            elif de <= 3:
+                capital_floor, capital_reason = 48, f"D/E {de:.2f}x (1.5-3x high)"
+            else:
+                capital_floor, capital_reason = 28, f"D/E {de:.2f}x (>3x very high)"
         if rev and rev > 10000 and capital_floor < 55:
             capital_floor = 55
             capital_reason += " (floor: large listed company)"
 
-        anchors["capital_floor"]  = capital_floor
+        anchors["capital_floor"] = capital_floor
         anchors["capital_reason"] = capital_reason
 
         # Character floor
@@ -1228,47 +1695,65 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
             character_floor, character_reason = 10, "HARD STOP: Wilful defaulter"
         elif promoter.get("criminal_cases"):
             character_floor, character_reason = 20, "Criminal cases against promoter"
-        elif promoter.get("risk_level") == "Low" and promoter.get("reputation") == "Good":
+        elif (
+            promoter.get("risk_level") == "Low" and promoter.get("reputation") == "Good"
+        ):
             character_floor, character_reason = 72, "Clean promoter, good reputation"
         else:
             character_floor, character_reason = 50, "Standard assessment"
 
-        anchors["character_floor"]  = character_floor
+        anchors["character_floor"] = character_floor
         anchors["character_reason"] = character_reason
 
         # Collateral floor
-        if rev and rev > 100000:   collateral_floor = 70
-        elif rev and rev > 50000:  collateral_floor = 62
-        elif rev and rev > 10000:  collateral_floor = 52
-        elif rev and rev > 1000:   collateral_floor = 43
-        else:                      collateral_floor = 38
+        if rev and rev > 100000:
+            collateral_floor = 70
+        elif rev and rev > 50000:
+            collateral_floor = 62
+        elif rev and rev > 10000:
+            collateral_floor = 52
+        elif rev and rev > 1000:
+            collateral_floor = 43
+        else:
+            collateral_floor = 38
 
-        anchors["collateral_floor"]  = collateral_floor
-        anchors["collateral_reason"] = f"Revenue {rev:.0f}Cr inferred asset base" if rev else "No revenue data"
+        anchors["collateral_floor"] = collateral_floor
+        anchors["collateral_reason"] = (
+            f"Revenue {rev:.0f}Cr inferred asset base" if rev else "No revenue data"
+        )
 
         # External rating anchor
         ext_rating = f.get("external_credit_rating") or ""
-        if any(x in str(ext_rating).upper() for x in ["AAA","AA+","AA"]):
+        if any(x in str(ext_rating).upper() for x in ["AAA", "AA+", "AA"]):
             anchors["external_rating_override"] = ext_rating
-            anchors["external_rating_floor"]    = 82
-        elif any(x in str(ext_rating).upper() for x in ["A+","A "]):
+            anchors["external_rating_floor"] = 82
+        elif any(x in str(ext_rating).upper() for x in ["A+", "A "]):
             anchors["external_rating_override"] = ext_rating
-            anchors["external_rating_floor"]    = 72
+            anchors["external_rating_floor"] = 72
 
-        print(f"  [RatioAnchors] CapacityFloor={capacity_floor}, CapitalFloor={capital_floor}, CharacterFloor={character_floor}")
+        print(
+            f"  [RatioAnchors] CapacityFloor={capacity_floor}, CapitalFloor={capital_floor}, CharacterFloor={character_floor}"
+        )
         return anchors
 
     # ══════════════════════════════════════════════════════════════════════ #
     # 7. _score_to_rating()
     # ══════════════════════════════════════════════════════════════════════ #
     def _score_to_rating(self, score: float) -> str:
-        if score >= 90: return "AAA"
-        if score >= 82: return "AA"
-        if score >= 75: return "A"
-        if score >= 68: return "BBB"
-        if score >= 60: return "BB"
-        if score >= 50: return "B"
-        if score >= 35: return "CCC"
+        if score >= 90:
+            return "AAA"
+        if score >= 82:
+            return "AA"
+        if score >= 75:
+            return "A"
+        if score >= 68:
+            return "BBB"
+        if score >= 60:
+            return "BB"
+        if score >= 50:
+            return "B"
+        if score >= 35:
+            return "CCC"
         return "D"
 
     # ══════════════════════════════════════════════════════════════════════ #
@@ -1276,8 +1761,8 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
     # ══════════════════════════════════════════════════════════════════════ #
     def _parse_json(self, text: str) -> dict:
         try:
-            text = re.sub(r'```json\s*', '', text)
-            text = re.sub(r'```\s*',     '', text)
+            text = re.sub(r"```json\s*", "", text)
+            text = re.sub(r"```\s*", "", text)
             return json.loads(text.strip())
         except Exception:
             return {"raw_response": text[:300], "parse_error": True}
