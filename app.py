@@ -8,9 +8,9 @@ import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
 import dashboards as _dashboards
-import dashboards.realtime_dashboard as _realtime_dash
-import dashboards.trend_dashboard as _trend_dash
-import dashboards.stress_testing_dashboard as _stress_dash
+import dashboards_ui.realtime_dashboard as _realtime_dash
+import dashboards_ui.trend_dashboard as _trend_dash
+import dashboards_ui.stress_testing_dashboard as _stress_dash
 
 load_dotenv()
 
