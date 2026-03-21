@@ -902,8 +902,6 @@ if st.session_state.get("analysis_done"):
                 }
             _trend_dash.render_trend_analysis(demo_trends, cname)
 
-                render_trend_analysis(demo_trends, cname)
-
         st.markdown("---")
         st.markdown("#### 📐 Trend-Adjusted Risk Factors")
 
