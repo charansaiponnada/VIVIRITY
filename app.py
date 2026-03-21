@@ -7,10 +7,7 @@ import tempfile
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
-import dashboards as _dashboards
-import dashboards.realtime_dashboard as _realtime_dash
-import dashboards.trend_dashboard as _trend_dash
-import dashboards.stress_testing_dashboard as _stress_dash
+import dashboards
 
 load_dotenv()
 
@@ -767,9 +764,9 @@ if st.session_state.get("analysis_done"):
     )
 
     with tabs[0]:
-        _dashboards.render_credit_command_center(sr, ml_results, fin, cname)
+        dashboards.render_credit_command_center(sr, ml_results, fin, cname)
     with tabs[1]:
-        _dashboards.render_risk_intelligence(
+        dashboards.render_risk_intelligence(
             sr, res, xref, cname, precognitive_signals=precog
         )
     with tabs[2]:
@@ -787,7 +784,7 @@ if st.session_state.get("analysis_done"):
                     st.write(f"**Type:** {p['type']}")
                     st.write(f"**Insight:** {p['insight']}")
     with tabs[3]:
-        _dashboards.render_financial_health(fin, sr, cname)
+        dashboards.render_financial_health(fin, sr, cname)
         st.markdown("---")
         st.markdown("#### 📋 Extraction & Source Audit")
         c_a, c_b = st.columns(2)
@@ -835,7 +832,7 @@ if st.session_state.get("analysis_done"):
         trend_analysis = sr.get("trend_analysis", {})
 
         if trend_analysis and trend_analysis.get("years_analyzed"):
-            _trend_dash.render_trend_analysis(trend_analysis, cname)
+            dashboards.trend_dashboard.render_trend_analysis(trend_analysis, cname)
         else:
             st.info(
                 "Multi-year trend data not available. Upload multiple years of financial data to enable trend analysis."
@@ -900,7 +897,7 @@ if st.session_state.get("analysis_done"):
                     ],
                     "risk_signals": [],
                 }
-            _trend_dash.render_trend_analysis(demo_trends, cname)
+            dashboards.trend_dashboard.render_trend_analysis(demo_trends, cname)
 
         st.markdown("---")
         st.markdown("#### 📐 Trend-Adjusted Risk Factors")
@@ -941,7 +938,9 @@ if st.session_state.get("analysis_done"):
         stress_results = sr.get("stress_test_results", {})
 
         if stress_results and stress_results.get("overall_stress_score"):
-            _stress_dash.render_stress_testing(stress_results, cname)
+            dashboards.stress_testing_dashboard.render_stress_testing(
+                stress_results, cname
+            )
         else:
             st.info("Stress testing data not available.")
 
@@ -995,7 +994,9 @@ if st.session_state.get("analysis_done"):
                         "Improve collections and monitor debtor days",
                     ],
                 }
-            _stress_dash.render_stress_testing(demo_stress, cname)
+            dashboards.stress_testing_dashboard.render_stress_testing(
+                demo_stress, cname
+            )
 
         st.markdown("---")
         st.markdown("#### 🔍 Stress-Adjusted Risk Factors")
@@ -1030,7 +1031,7 @@ if st.session_state.get("analysis_done"):
         spec_data = st.session_state.financials_all.get(
             "merged_all", st.session_state.financials_all
         )
-        _dashboards.render_specialized_monitor(spec_data, cname)
+        dashboards.render_specialized_monitor(spec_data, cname)
 
     with tabs[7]:
         c_x1, c_x2 = st.columns(2)
@@ -1111,9 +1112,13 @@ if st.session_state.get("analysis_done"):
             enrichment_report = st.session_state.get("enrichment_report")
 
             if live_profile:
-                _realtime_dash.render_live_data_panel(live_profile, enrichment_report)
+                dashboards.realtime_dashboard.render_live_data_panel(
+                    live_profile, enrichment_report
+                )
 
-                summary = _realtime_dash.render_live_data_summary(live_profile)
+                summary = dashboards.realtime_dashboard.render_live_data_summary(
+                    live_profile
+                )
                 st.markdown("---")
                 st.markdown("#### 🔍 Live Data Risk Summary")
 
