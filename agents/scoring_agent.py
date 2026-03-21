@@ -1211,8 +1211,16 @@ Return ONLY valid JSON. No markdown. No thinking tokens.
         Returns True if the NCLT proceedings are a corporate action
         (demerger, merger, restructuring) — these should NOT be penalised.
         """
-        nclt_type = (litigation.get("nclt_type") or "").lower()
-        summary = (litigation.get("summary") or "").lower()
+        nclt_type = litigation.get("nclt_type") or ""
+        if isinstance(nclt_type, list):
+            nclt_type = " ".join(str(x) for x in nclt_type)
+        nclt_type = str(nclt_type).lower()
+
+        summary = litigation.get("summary") or ""
+        if isinstance(summary, list):
+            summary = " ".join(str(x) for x in summary)
+        summary = str(summary).lower()
+
         combined = nclt_type + " " + summary
 
         # Check against excluded event types
