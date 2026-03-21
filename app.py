@@ -7,13 +7,16 @@ import tempfile
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
-import dashboards_main
-from dashboards_main.trend_dashboard import render_trend_analysis
-from dashboards_main.realtime_dashboard import (
+from dashboards import (
+    render_credit_command_center,
+    render_risk_intelligence,
+    render_financial_health,
+    render_specialized_monitor,
+    render_trend_analysis,
     render_live_data_panel,
     render_live_data_summary,
+    render_stress_testing,
 )
-from dashboards_main.stress_testing_dashboard import render_stress_testing
 
 load_dotenv()
 
@@ -770,9 +773,9 @@ if st.session_state.get("analysis_done"):
     )
 
     with tabs[0]:
-        dashboards_main.render_credit_command_center(sr, ml_results, fin, cname)
+        render_render_credit_command_center(sr, ml_results, fin, cname)
     with tabs[1]:
-        dashboards_main.render_risk_intelligence(
+        render_render_risk_intelligence(
             sr, res, xref, cname, precognitive_signals=precog
         )
     with tabs[2]:
@@ -790,7 +793,7 @@ if st.session_state.get("analysis_done"):
                     st.write(f"**Type:** {p['type']}")
                     st.write(f"**Insight:** {p['insight']}")
     with tabs[3]:
-        dashboards_main.render_financial_health(fin, sr, cname)
+        render_render_financial_health(fin, sr, cname)
         st.markdown("---")
         st.markdown("#### 📋 Extraction & Source Audit")
         c_a, c_b = st.columns(2)
@@ -1033,7 +1036,7 @@ if st.session_state.get("analysis_done"):
         spec_data = st.session_state.financials_all.get(
             "merged_all", st.session_state.financials_all
         )
-        dashboards_main.render_specialized_monitor(spec_data, cname)
+        render_render_specialized_monitor(spec_data, cname)
 
     with tabs[7]:
         c_x1, c_x2 = st.columns(2)
