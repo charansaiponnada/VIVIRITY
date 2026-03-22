@@ -3,9 +3,6 @@ core/databricks_layer.py
 ------------------------
 Databricks-compatible data ingestion and lakehouse layer.
 
-The hackathon problem statement says:
-  "The solution must ingest multi-source data (Databricks)"
-
 This module provides:
 1. A DatabricksDataLayer class that simulates Databricks Delta Lake operations
 2. Schema definitions matching Databricks Unity Catalog conventions
