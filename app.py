@@ -2,17 +2,45 @@ import os
 import json
 import time
 import re
+import asyncio
 import tempfile
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
+from dashboards import (
+    render_credit_command_center,
+    render_risk_intelligence,
+    render_financial_health,
+    render_specialized_monitor,
+    render_trend_analysis,
+    render_live_data_panel,
+    render_live_data_summary,
+    render_stress_testing,
+)
 
 load_dotenv()
+
+
+def _ts():
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _log(msg: str, status: st):
+    status.write(f"`[{_ts()}]` {msg}")
+
+
+REALTIME_AVAILABLE = True
+try:
+    from core.realtime_integration import RealtimeDataProvider, LiveDataEnricher
+except ImportError as e:
+    print(f"[App] Real-time integration module not available: {e}")
+    REALTIME_AVAILABLE = False
 
 # ML model and Databricks layer (hackathon requirements)
 try:
     from core.ml_credit_model import MLCreditModel
     from core.databricks_layer import DatabricksDataLayer
+
     ML_AVAILABLE = True
 except ImportError as e:
     print(f"[App] ML/Databricks import warning: {e}")
@@ -25,7 +53,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
@@ -54,10 +83,13 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
 }
 [data-theme="dark"] .section-header { color: #C9A84C; border-bottom-color: #C9A84C; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ── Hero ─────────────────────────────────────────────────────────────────── #
-st.markdown("""
+st.markdown(
+    """
 <div class="hero">
     <h1>🏦 INTELLI-CREDIT</h1>
     <p>AI-Powered Corporate Credit Appraisal Engine &nbsp;·&nbsp; Weeks of work in minutes</p>
@@ -66,21 +98,30 @@ st.markdown("""
         <span>Cross-Document Intelligence</span><span>Indian Context</span><span>Gemini 2.5</span>
     </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────── #
 with st.sidebar:
     st.markdown("### INTELLI-CREDIT\n*by DOMINIX*")
     st.markdown("---")
     st.markdown("**AGENT PIPELINE**")
-    agent_placeholders = {k: st.empty() for k in [
-        "Doc Classifier", "Data Ingestor", "Cross-Reference",
-        "Research Agent", "Scoring Agent",  "CAM Generator",
-        "A2A Protocol",
-    ]}
+    agent_placeholders = {
+        k: st.empty()
+        for k in [
+            "Doc Classifier",
+            "Data Ingestor",
+            "Cross-Reference",
+            "Research Agent",
+            "Scoring Agent",
+            "CAM Generator",
+            "A2A Protocol",
+        ]
+    }
     for k in agent_placeholders:
         agent_placeholders[k].markdown(f"⚪ {k}")
-    
+
     st.markdown("---")
     st.markdown("**A2A SERVER STATUS**")
     if st.session_state.get("a2a_thread"):
@@ -90,7 +131,10 @@ with st.sidebar:
         if st.button("🚀 Start A2A Server", key="sb_a2a"):
             from a2a.server import run_a2a_server
             import threading
-            t = threading.Thread(target=run_a2a_server, kwargs={"port": 5000}, daemon=True)
+
+            t = threading.Thread(
+                target=run_a2a_server, kwargs={"port": 5000}, daemon=True
+            )
             t.start()
             st.session_state.a2a_thread = t
             st.rerun()
@@ -98,9 +142,13 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Vivriti Capital Hackathon 2026\nIIT Hyderabad · YUVAAN 2026")
 
-def set_agent(name, status):
-    icon = {"pending":"⚪","running":"🔄","done":"✅","error":"❌"}.get(status,"⚪")
-    agent_placeholders[name].markdown(f"{icon} {name}")
+
+def set_agent(name, status, ts=None):
+    icon = {"pending": "⚪", "running": "🔄", "done": "✅", "error": "❌"}.get(
+        status, "⚪"
+    )
+    ts_str = f" `{ts or _ts()}`" if status == "done" else ""
+    agent_placeholders[name].markdown(f"{icon} {name}{ts_str}")
 
 
 def _is_missing(val):
@@ -114,7 +162,9 @@ def _is_missing(val):
     return False
 
 
-def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, company_name: str) -> tuple[dict, list[str], dict]:
+def _enrich_financials(
+    primary_fin: dict, all_docs: dict, research: dict, company_name: str
+) -> tuple[dict, list[str], dict]:
     """Backfill missing primary financial fields from structured docs and research signals."""
     fin = dict(primary_fin or {})
     all_docs = all_docs or {}
@@ -123,31 +173,51 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
     source_map = {}
 
     def _coerce_num(value):
-        if _is_missing(value): return None
-        if isinstance(value, (int, float)): return float(value)
+        if _is_missing(value):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
         if isinstance(value, str):
             m = re.search(r"-?\d+(?:\.\d+)?", value.replace(",", ""))
             if m:
-                try: return float(m.group(0))
-                except Exception: return value
+                try:
+                    return float(m.group(0))
+                except Exception:
+                    return value
         return value
 
     # 1. Inference: If extraction_notes says "debt free", set total_borrowings to 0
     notes = str(fin.get("extraction_notes", "")).lower()
-    if _is_missing(fin.get("total_borrowings_crores")) and ("debt free" in notes or "zero debt" in notes):
+    if _is_missing(fin.get("total_borrowings_crores")) and (
+        "debt free" in notes or "zero debt" in notes
+    ):
         fin["total_borrowings_crores"] = 0.0
         backfilled.append("total_borrowings_crores<-inference(notes)")
         source_map["total_borrowings_crores"] = "inference"
 
     # Tag fields already present
-    tracked_fields = ["revenue_crores", "profit_after_tax_crores", "ebitda_crores", "debt_equity_ratio", "current_ratio", "net_worth_crores", "external_credit_rating", "company_name"]
+    tracked_fields = [
+        "revenue_crores",
+        "profit_after_tax_crores",
+        "ebitda_crores",
+        "debt_equity_ratio",
+        "current_ratio",
+        "net_worth_crores",
+        "external_credit_rating",
+        "company_name",
+    ]
     for f in tracked_fields:
-        if not _is_missing(fin.get(f)): source_map[f] = "annual_report"
+        if not _is_missing(fin.get(f)):
+            source_map[f] = "annual_report"
 
     # Alias normalization
     alias_map = {
         "profit_after_tax_crores": ["profit_after_tax", "pat_crores", "pat"],
-        "net_worth_crores": ["net_worth", "shareholders_funds_crores", "total_equity_crores"],
+        "net_worth_crores": [
+            "net_worth",
+            "shareholders_funds_crores",
+            "total_equity_crores",
+        ],
         "total_borrowings_crores": ["total_borrowings", "borrowings"],
         "revenue_crores": ["revenue", "total_income", "turnover"],
     }
@@ -163,7 +233,9 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
     # Supporting docs (GST, ITR, Bank)
     for src_name in ["gst_filing", "itr_filing", "bank_statement"]:
         doc = all_docs.get(src_name, {})
-        if _is_missing(fin.get("revenue_crores")) and not _is_missing(doc.get("revenue_crores")):
+        if _is_missing(fin.get("revenue_crores")) and not _is_missing(
+            doc.get("revenue_crores")
+        ):
             fin["revenue_crores"] = doc.get("revenue_crores")
             backfilled.append(f"revenue_crores<-{src_name}")
             source_map["revenue_crores"] = src_name
@@ -177,11 +249,19 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
                 fin["debt_equity_ratio"] = round(debt / nw, 2)
                 backfilled.append("debt_equity_ratio<-computed")
                 source_map["debt_equity_ratio"] = "computed"
-        except: pass
+        except:
+            pass
 
     # Research backfill
     res_snap = research.get("financial_snapshot", {})
-    for fk in ["revenue_crores", "profit_after_tax_crores", "ebitda_crores", "net_worth_crores", "debt_equity_ratio", "current_ratio"]:
+    for fk in [
+        "revenue_crores",
+        "profit_after_tax_crores",
+        "ebitda_crores",
+        "net_worth_crores",
+        "debt_equity_ratio",
+        "current_ratio",
+    ]:
         if _is_missing(fin.get(fk)) and not _is_missing(res_snap.get(fk)):
             fin[fk] = _coerce_num(res_snap.get(fk))
             backfilled.append(f"{fk}<-research")
@@ -193,6 +273,7 @@ def _enrich_financials(primary_fin: dict, all_docs: dict, research: dict, compan
 
     return fin, backfilled, source_map
 
+
 # ── Session State Initialization ─────────────────────────────────────────── #
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -203,8 +284,14 @@ if "analysis_done" not in st.session_state:
 if "log_lines" not in st.session_state:
     st.session_state.log_lines = []
 
-def next_step(): st.session_state.step += 1
-def prev_step(): st.session_state.step -= 1
+
+def next_step():
+    st.session_state.step += 1
+
+
+def prev_step():
+    st.session_state.step -= 1
+
 
 # ── Navigation Header ────────────────────────────────────────────────────── #
 steps = ["Entity Details", "Document Upload", "Review & Schema", "Analysis"]
@@ -212,159 +299,316 @@ cols = st.columns(len(steps))
 for i, step_label in enumerate(steps):
     step_num = i + 1
     with cols[i]:
-        if st.session_state.step == step_num: st.markdown(f"**🔵 Step {step_num}**\n\n**{step_label}**")
-        elif st.session_state.step > step_num: st.markdown(f"✅ **Step {step_num}**\n\n{step_label}")
-        else: st.markdown(f"⚪ Step {step_num}\n\n{step_label}")
+        if st.session_state.step == step_num:
+            st.markdown(f"**🔵 Step {step_num}**\n\n**{step_label}**")
+        elif st.session_state.step > step_num:
+            st.markdown(f"✅ **Step {step_num}**\n\n{step_label}")
+        else:
+            st.markdown(f"⚪ Step {step_num}\n\n{step_label}")
 st.markdown("---")
 
 # ── STEP 1: ENTITY & LOAN DETAILS ───────────────────────────────────────── #
 if st.session_state.step == 1:
-    st.markdown('<div class="section-header">01 / ENTITY ONBOARDING</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-header">01 / ENTITY ONBOARDING</div>',
+        unsafe_allow_html=True,
+    )
     c1, c2 = st.columns(2)
     with c1:
-        st.session_state.company_name = st.text_input("Company Name *", value=st.session_state.get("company_name", ""), placeholder="e.g. Tata Motors Limited")
-        st.session_state.cin = st.text_input("CIN", value=st.session_state.get("cin", ""), placeholder="e.g. L28920MH1945PLC004520")
-        st.session_state.sector = st.selectbox("Industry Sector", ["Manufacturing","Automobile","Banking","NBFC / Financial Services","Insurance","Infrastructure","Real Estate","FMCG","Pharma","IT / Technology","Other"], index=0)
+        st.session_state.company_name = st.text_input(
+            "Company Name *",
+            value=st.session_state.get("company_name", ""),
+            placeholder="e.g. Tata Motors Limited",
+        )
+        st.session_state.cin = st.text_input(
+            "CIN",
+            value=st.session_state.get("cin", ""),
+            placeholder="e.g. L28920MH1945PLC004520",
+        )
+        st.session_state.gstin = st.text_input(
+            "GSTIN (for live verification)",
+            value=st.session_state.get("gstin", ""),
+            placeholder="e.g. 27AABCU9603R1ZM",
+        )
+        st.session_state.sector = st.selectbox(
+            "Industry Sector",
+            [
+                "Manufacturing",
+                "Automobile",
+                "Banking",
+                "NBFC / Financial Services",
+                "Insurance",
+                "Infrastructure",
+                "Real Estate",
+                "FMCG",
+                "Pharma",
+                "IT / Technology",
+                "Other",
+            ],
+            index=0,
+        )
     with c2:
-        st.session_state.loan_amount = st.text_input("Requested Loan Amount (₹ Crores) *", value=st.session_state.get("loan_amount", ""), placeholder="e.g. 50")
-        st.session_state.loan_tenure = st.number_input("Tenure (Months)", 1, 360, int(st.session_state.get("loan_tenure", 36)))
-        st.session_state.loan_interest = st.slider("Target Interest Rate (%)", 5.0, 25.0, float(st.session_state.get("loan_interest", 10.5)), 0.25)
+        st.session_state.loan_amount = st.text_input(
+            "Requested Loan Amount (₹ Crores) *",
+            value=st.session_state.get("loan_amount", ""),
+            placeholder="e.g. 50",
+        )
+        st.session_state.loan_tenure = st.number_input(
+            "Tenure (Months)", 1, 360, int(st.session_state.get("loan_tenure", 36))
+        )
+        st.session_state.loan_interest = st.slider(
+            "Target Interest Rate (%)",
+            5.0,
+            25.0,
+            float(st.session_state.get("loan_interest", 10.5)),
+            0.25,
+        )
 
     if st.button("Continue to Upload →", type="primary"):
-        if not st.session_state.company_name or not st.session_state.loan_amount: st.error("Company Name and Loan Amount are required.")
-        else: next_step(); st.rerun()
+        if not st.session_state.company_name or not st.session_state.loan_amount:
+            st.error("Company Name and Loan Amount are required.")
+        else:
+            next_step()
+            st.rerun()
 
 # ── STEP 2: INTELLIGENT DATA INGESTION ──────────────────────────────────── #
 elif st.session_state.step == 2:
-    st.markdown('<div class="section-header">02 / DOCUMENT UPLOAD</div>', unsafe_allow_html=True)
-    uploaded_files = st.file_uploader("Secure Upload Interface", type=["pdf", "json", "csv"], accept_multiple_files=True)
-    if uploaded_files: st.session_state.uploaded_files = uploaded_files
+    st.markdown(
+        '<div class="section-header">02 / DOCUMENT UPLOAD</div>', unsafe_allow_html=True
+    )
+    uploaded_files = st.file_uploader(
+        "Secure Upload Interface",
+        type=["pdf", "json", "csv"],
+        accept_multiple_files=True,
+    )
+    if uploaded_files:
+        st.session_state.uploaded_files = uploaded_files
     col_b1, col_b2 = st.columns([1, 5])
-    if col_b1.button("← Back"): prev_step(); st.rerun()
+    if col_b1.button("← Back"):
+        prev_step()
+        st.rerun()
     if col_b2.button("Run Classification & Review →", type="primary"):
-        if not uploaded_files: st.warning("Please upload at least one document.")
+        if not uploaded_files:
+            st.warning("Please upload at least one document.")
         else:
             with st.spinner("Classifying documents..."):
                 from agents.document_classifier import DocumentClassifier
                 import pdfplumber
-                tmp_dir = tempfile.mkdtemp(); classifications = {}
+
+                tmp_dir = tempfile.mkdtemp()
+                classifications = {}
                 for f in uploaded_files:
                     p = os.path.join(tmp_dir, f.name)
-                    with open(p, "wb") as fh: fh.write(f.getvalue())
-                    
-                    doc_type = "annual_report" # Default
+                    with open(p, "wb") as fh:
+                        fh.write(f.getvalue())
+
+                    doc_type = "annual_report"  # Default
                     fname_lower = f.name.lower()
-                    
+
                     # 1. Filename-based hint
-                    if "gst" in fname_lower: doc_type = "gst_filing"
-                    elif "bank" in fname_lower or "statement" in fname_lower: doc_type = "bank_statement"
-                    elif "itr" in fname_lower or "tax" in fname_lower: doc_type = "itr_filing"
-                    elif "alm" in fname_lower: doc_type = "alm_report"
-                    elif "shareholding" in fname_lower: doc_type = "shareholding_pattern"
-                    elif "borrowing" in fname_lower or "debt" in fname_lower: doc_type = "borrowing_profile"
-                    elif "portfolio" in fname_lower or "cuts" in fname_lower: doc_type = "portfolio_cuts"
-                    
+                    if "gst" in fname_lower:
+                        doc_type = "gst_filing"
+                    elif "bank" in fname_lower or "statement" in fname_lower:
+                        doc_type = "bank_statement"
+                    elif "itr" in fname_lower or "tax" in fname_lower:
+                        doc_type = "itr_filing"
+                    elif "alm" in fname_lower:
+                        doc_type = "alm_report"
+                    elif "shareholding" in fname_lower:
+                        doc_type = "shareholding_pattern"
+                    elif "borrowing" in fname_lower or "debt" in fname_lower:
+                        doc_type = "borrowing_profile"
+                    elif "portfolio" in fname_lower or "cuts" in fname_lower:
+                        doc_type = "portfolio_cuts"
+
                     # 2. Deep content-based for PDFs
-                    if f.name.lower().endswith('.pdf'):
+                    if f.name.lower().endswith(".pdf"):
                         with pdfplumber.open(p) as pdf:
                             content_type = DocumentClassifier(pdf).classify()
                             # Only override if the content-based classifier actually found something (it defaults to annual_report)
                             if content_type != "annual_report":
                                 doc_type = content_type
-                            elif doc_type == "annual_report": # If still annual_report, use content-based result anyway
+                            elif (
+                                doc_type == "annual_report"
+                            ):  # If still annual_report, use content-based result anyway
                                 doc_type = content_type
 
-                    classifications[f.name] = {"type": doc_type, "path": p, "size": f.size, "approved": True}
+                    classifications[f.name] = {
+                        "type": doc_type,
+                        "path": p,
+                        "size": f.size,
+                        "approved": True,
+                    }
                 st.session_state.classifications = classifications
-                next_step(); st.rerun()
+                next_step()
+                st.rerun()
 
 # ── STEP 3: HUMAN-IN-THE-LOOP & DYNAMIC SCHEMA ──────────────────────────── #
 elif st.session_state.step == 3:
-    st.markdown('<div class="section-header">03 / CLASSIFICATION REVIEW & DYNAMIC SCHEMA</div>', unsafe_allow_html=True)
-    doc_types = ["annual_report", "gst_filing", "bank_statement", "itr_filing", "alm_report", "shareholding_pattern", "borrowing_profile", "portfolio_cuts"]
+    st.markdown(
+        '<div class="section-header">03 / CLASSIFICATION REVIEW & DYNAMIC SCHEMA</div>',
+        unsafe_allow_html=True,
+    )
+    doc_types = [
+        "annual_report",
+        "gst_filing",
+        "bank_statement",
+        "itr_filing",
+        "alm_report",
+        "shareholding_pattern",
+        "borrowing_profile",
+        "portfolio_cuts",
+    ]
     updated = {}
     for fname, data in st.session_state.classifications.items():
         c1, c2, c3 = st.columns([3, 2, 1])
         c1.write(f"📄 **{fname}**")
-        new_type = c2.selectbox(f"Type for {fname}", doc_types, index=doc_types.index(data['type']) if data['type'] in doc_types else 0, key=f"t_{fname}")
-        is_app = c3.checkbox("Approve", value=data['approved'], key=f"a_{fname}")
+        new_type = c2.selectbox(
+            f"Type for {fname}",
+            doc_types,
+            index=doc_types.index(data["type"]) if data["type"] in doc_types else 0,
+            key=f"t_{fname}",
+        )
+        is_app = c3.checkbox("Approve", value=data["approved"], key=f"a_{fname}")
         updated[fname] = {**data, "type": new_type, "approved": is_app}
     st.session_state.classifications = updated
     st.markdown("### Dynamic Extraction Schema")
     c_s1, c_s2 = st.columns(2)
     st.session_state.extract_ratios = c_s1.checkbox("Key Financial Ratios", value=True)
-    st.session_state.extract_red_flags = c_s1.checkbox("Red Flags & Contingencies", value=True)
-    st.session_state.custom_fields = c_s2.text_area("Custom Fields", value=st.session_state.get("custom_fields", ""), placeholder="e.g. R&D Expenses")
+    st.session_state.extract_red_flags = c_s1.checkbox(
+        "Red Flags & Contingencies", value=True
+    )
+    st.session_state.custom_fields = c_s2.text_area(
+        "Custom Fields",
+        value=st.session_state.get("custom_fields", ""),
+        placeholder="e.g. R&D Expenses",
+    )
     col_b1, col_b2 = st.columns([1, 5])
-    if col_b1.button("← Back"): prev_step(); st.rerun()
-    if col_b2.button("⚡ Run Full Credit Analysis →", type="primary"): next_step(); st.rerun()
+    if col_b1.button("← Back"):
+        prev_step()
+        st.rerun()
+    if col_b2.button("⚡ Run Full Credit Analysis →", type="primary"):
+        next_step()
+        st.rerun()
 
 # ── STEP 4: ANALYSIS & REPORTING ────────────────────────────────────────── #
 elif st.session_state.step == 4:
     if not st.session_state.get("analysis_done"):
         cname, sector = st.session_state.company_name, st.session_state.sector
-        
+
         # High-impact status container for better UX
-        with st.status("🚀 Deep Credit Analysis in Progress...", expanded=True) as status:
+        with st.status(
+            f"🚀 Deep Credit Analysis in Progress... `[Started {_ts()}]`", expanded=True
+        ) as status:
             try:
                 from utils.indian_context import detect_entity_type
-                st.write("🔍 Identifying entity type and sector context...")
+
+                _log("🔍 Identifying entity type and sector context...", status)
                 e_type = detect_entity_type(cname, st.session_state.cin, sector)
-                
+
                 from agents.ingestor_agent import IngestorAgent
-                t_paths = [d['path'] for d in st.session_state.classifications.values() if d['approved']]
-                schema = {"ratios": st.session_state.extract_ratios, "directors": True, "red_flags": st.session_state.extract_red_flags}
-                
-                st.write("📄 Ingesting and parsing financial documents...")
+
+                t_paths = [
+                    d["path"]
+                    for d in st.session_state.classifications.values()
+                    if d["approved"]
+                ]
+                schema = {
+                    "ratios": st.session_state.extract_ratios,
+                    "directors": True,
+                    "red_flags": st.session_state.extract_red_flags,
+                }
+
+                _log("📄 Ingesting and parsing financial documents...", status)
                 set_agent("Data Ingestor", "running")
-                def _log_placeholder(msg, lvl="info"): pass # Legacy support
-                fin_all = IngestorAgent(t_paths, _log_placeholder, e_type, schema, st.session_state.custom_fields).run()
-                
-                p_fin = fin_all.get("annual_report") or (list(fin_all.values())[0] if fin_all else {})
+
+                def _log_placeholder(msg, lvl="info"):
+                    pass  # Legacy support
+
+                fin_all = IngestorAgent(
+                    t_paths,
+                    _log_placeholder,
+                    e_type,
+                    schema,
+                    st.session_state.custom_fields,
+                ).run()
+
+                p_fin = fin_all.get("annual_report") or (
+                    list(fin_all.values())[0] if fin_all else {}
+                )
                 p_fin["_entity_type"] = e_type
                 st.session_state.financials_all = fin_all
-                set_agent("Data Ingestor", "done")
-                
-                st.write("🔗 Performing cross-reference and GST validation...")
+                set_agent("Data Ingestor", "done", _ts())
+
+                _log("🔗 Performing cross-reference and GST validation...", status)
                 from agents.cross_reference_agent import CrossReferenceAgent
+
                 st.session_state.cross_ref = CrossReferenceAgent(fin_all).run()
-                
-                st.write("🌐 Gathering external intelligence (MCA, e-Courts, News)...")
+
+                _log(
+                    "🌐 Gathering external intelligence (MCA, e-Courts, News)...",
+                    status,
+                )
                 from agents.research_agent import ResearchAgent
+
                 res = ResearchAgent(cname, sector).run()
-                
-                st.write("🧠 Enriching financial data with research signals...")
+
+                _log("🧠 Enriching financial data with research signals...", status)
                 p_fin, back, s_map = _enrich_financials(p_fin, fin_all, res, cname)
                 st.session_state.financials = p_fin
                 st.session_state.financials_source_map = s_map
                 st.session_state.research = res
-                
-                st.write("📈 Calculating risk scores and Pre-Cognitive signals...")
+
+                _log("📈 Calculating risk scores and Pre-Cognitive signals...", status)
                 from agents.scoring_agent import ScoringAgent
-                sa = ScoringAgent(cname, p_fin, res, entity_type=e_type, cross_ref=st.session_state.cross_ref)
+
+                sa = ScoringAgent(
+                    cname,
+                    p_fin,
+                    res,
+                    entity_type=e_type,
+                    cross_ref=st.session_state.cross_ref,
+                )
                 sr = sa.run()
-                
+
                 # PRE-COGNITIVE SIGNALS (Analytical Depth)
                 from core.risk_engine import detect_precognitive_signals
-                st.session_state.precognitive_signals = detect_precognitive_signals(res, p_fin)
-                
+
+                st.session_state.precognitive_signals = detect_precognitive_signals(
+                    res, p_fin
+                )
+
                 if ML_AVAILABLE:
-                    st.write("🤖 Running ML credit prediction model...")
+                    _log("🤖 Running ML credit prediction model...", status)
                     ml_r = MLCreditModel().predict(p_fin, res, "")
                     if ml_r:
-                        sr["recommendation"] = sa.generate_recommendation(sr["five_cs"], sr["risk_score"], ml_results=ml_r)
+                        sr["recommendation"] = sa.generate_recommendation(
+                            sr["five_cs"], sr["risk_score"], ml_results=ml_r
+                        )
                         st.session_state.ml_results = ml_r
-                
+
                 st.session_state.scoring_results = sr
-                
-                st.write("📝 Generating final Credit Appraisal Memo (CAM)...")
+
+                _log("📝 Generating final Credit Appraisal Memo (CAM)...", status)
                 from agents.cam_agent import CAMAgent
-                st.session_state.cam_path = CAMAgent(cname, p_fin, res, sr, st.session_state.cross_ref, output_dir="outputs").run()
-                
-                status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
+
+                st.session_state.cam_path = CAMAgent(
+                    cname,
+                    p_fin,
+                    res,
+                    sr,
+                    st.session_state.cross_ref,
+                    output_dir="outputs",
+                ).run()
+
+                status.update(
+                    label=f"✅ Analysis Complete! `[Finished {_ts()}]`",
+                    state="complete",
+                    expanded=False,
+                )
                 st.session_state.analysis_done = True
                 st.rerun()
-                
+
             except Exception as e:
                 status.update(label="❌ Analysis Failed", state="error")
                 st.error(f"**Critical Error during analysis:** {e}")
@@ -374,33 +618,57 @@ elif st.session_state.step == 4:
 
 # ── Results display ───────────────────────────────────────────────────────── #
 if st.session_state.get("analysis_done"):
-    sr, fin, res, xref = st.session_state.scoring_results, st.session_state.financials, st.session_state.research, st.session_state.cross_ref
-    ml_results, log_lines = st.session_state.get("ml_results", {}), st.session_state.get("log_lines", [])
+    sr, fin, res, xref = (
+        st.session_state.scoring_results,
+        st.session_state.financials,
+        st.session_state.research,
+        st.session_state.cross_ref,
+    )
+    ml_results, log_lines = (
+        st.session_state.get("ml_results", {}),
+        st.session_state.get("log_lines", []),
+    )
     precog = st.session_state.get("precognitive_signals", [])
-    rec, risk_score, five_cs = sr.get("recommendation", {}), sr.get("risk_score", {}), sr.get("five_cs", {})
-    cname, score, rating, decision = st.session_state.company_name, rec.get("final_score", 0), rec.get("rating", "N/A"), rec.get("decision", "N/A")
+    rec, risk_score, five_cs = (
+        sr.get("recommendation", {}),
+        sr.get("risk_score", {}),
+        sr.get("five_cs", {}),
+    )
+    cname, score, rating, decision = (
+        st.session_state.company_name,
+        rec.get("final_score", 0),
+        rec.get("rating", "N/A"),
+        rec.get("decision", "N/A"),
+    )
 
     # ── TOP ACTION BAR (Improved UX) ─────────────────────────────────────── #
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 12px; border: 1px solid #e9ecef; margin-bottom: 2rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <div style="font-size: 1.2rem; font-weight: 700; color: #1B3A6B;">🚀 CREDIT DECISION COMPLETE</div>
             <div style="font-size: 0.85rem; color: #6c757d;">Generated at: {datetime.now().strftime("%H:%M")}</div>
         </div>
-        <div style="font-size: 1.8rem; font-weight: 800; color: {("#1E8449" if decision=="APPROVE" else "#D68910" if "CONDITIONAL" in decision else "#C0392B")}; margin-bottom: 1.5rem;">
+        <div style="font-size: 1.8rem; font-weight: 800; color: {("#1E8449" if decision == "APPROVE" else "#D68910" if "CONDITIONAL" in decision else "#C0392B")}; margin-bottom: 1.5rem;">
             FINAL RECOMMENDATION: {decision}
         </div>
     </div>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     # Persistent Action Bar
     with st.container():
         act1, act2, act3, act4 = st.columns([1, 1, 1, 1])
-        
+
         cp = st.session_state.get("cam_path")
         # Ensure we have paths even if files are pending
         docx_path = cp if cp and os.path.exists(cp) else None
-        pdf_path = cp.replace(".docx", ".pdf") if cp and os.path.exists(cp.replace(".docx", ".pdf")) else None
+        pdf_path = (
+            cp.replace(".docx", ".pdf")
+            if cp and os.path.exists(cp.replace(".docx", ".pdf"))
+            else None
+        )
 
         if docx_path:
             with open(docx_path, "rb") as f:
@@ -410,10 +678,12 @@ if st.session_state.get("analysis_done"):
                     file_name=os.path.basename(docx_path),
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     use_container_width=True,
-                    key="btn_docx"
+                    key="btn_docx",
                 )
         else:
-            act1.button("📄 Word CAM Pending...", disabled=True, use_container_width=True)
+            act1.button(
+                "📄 Word CAM Pending...", disabled=True, use_container_width=True
+            )
 
         if pdf_path:
             with open(pdf_path, "rb") as f:
@@ -423,23 +693,40 @@ if st.session_state.get("analysis_done"):
                     file_name=os.path.basename(pdf_path),
                     mime="application/pdf",
                     use_container_width=True,
-                    key="btn_pdf"
+                    key="btn_pdf",
                 )
         else:
             # High-quality fallback if PDF conversion is not available on current host
-            act2.button("📕 PDF Export (N/A)", disabled=True, use_container_width=True, help="PDF conversion requires Microsoft Word on host system.")
+            act2.button(
+                "📕 PDF Export (N/A)",
+                disabled=True,
+                use_container_width=True,
+                help="PDF conversion requires Microsoft Word on host system.",
+            )
 
-        full_data = {"company": cname, "scoring": sr, "financials": fin, "research": res, "cross_ref": xref, "precognitive": precog}
+        full_data = {
+            "company": cname,
+            "scoring": sr,
+            "financials": fin,
+            "research": res,
+            "cross_ref": xref,
+            "precognitive": precog,
+        }
         act3.download_button(
             label="🧬 Export JSON Audit",
             data=json.dumps(full_data, indent=2),
             file_name=f"Audit_{cname}.json",
             mime="application/json",
             use_container_width=True,
-            key="btn_json"
+            key="btn_json",
         )
-        
-        if act4.button("🔄 Start New Analysis", type="secondary", use_container_width=True, key="btn_new"):
+
+        if act4.button(
+            "🔄 Start New Analysis",
+            type="secondary",
+            use_container_width=True,
+            key="btn_new",
+        ):
             st.session_state.analysis_done = False
             st.session_state.step = 1
             st.rerun()
@@ -448,83 +735,335 @@ if st.session_state.get("analysis_done"):
     with st.container():
         st.markdown("#### 📝 Credit Reasoning & Decision Logic")
         st.info(f"**Primary Driver:** {rec.get('decision_rationale', 'N/A')}")
-        
+
         # Explain the "Why" using the Five Cs rationales
         cols = st.columns(3)
-        cols[0].write(f"**Financial Capacity:** {five_cs.get('capacity_rationale', 'N/A')[:120]}...")
-        cols[1].write(f"**Solvency (Capital):** {five_cs.get('capital_rationale', 'N/A')[:120]}...")
-        cols[2].write(f"**Character & Fraud:** {five_cs.get('character_rationale', 'N/A')[:120]}...")
+        cols[0].write(
+            f"**Financial Capacity:** {five_cs.get('capacity_rationale', 'N/A')[:120]}..."
+        )
+        cols[1].write(
+            f"**Solvency (Capital):** {five_cs.get('capital_rationale', 'N/A')[:120]}..."
+        )
+        cols[2].write(
+            f"**Character & Fraud:** {five_cs.get('character_rationale', 'N/A')[:120]}..."
+        )
 
     st.markdown("---")
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("SCORE", f"{score}/100"); c2.metric("RATING", rating); c3.metric("AMOUNT", f"₹{rec.get('recommended_amount_crores','N/A')} Cr"); c4.metric("RATE", f"{rec.get('interest_rate_percent','N/A')}%"); c5.metric("TENURE", f"{rec.get('tenure_months','N/A')}M")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("SCORE", f"{score}/100")
+    c2.metric("RATING", rating)
+    c3.metric("AMOUNT", f"₹{rec.get('recommended_amount_crores', 'N/A')} Cr")
+    c4.metric("RATE", f"{rec.get('interest_rate_percent', 'N/A')}%")
+    c5.metric("TENURE", f"{rec.get('tenure_months', 'N/A')}M")
 
-    tabs = st.tabs(["📊 Command Center", "🛡️ Risk Intel", "🚨 Pre-Cognitive", "💰 Financials", "🔍 Specialized", "🔗 Cross-Ref", "🤖 ML", "🔌 A2A"])
-    
-    with tabs[0]: 
-        from dashboards import render_credit_command_center
+    tabs = st.tabs(
+        [
+            "📊 Command Center",
+            "🛡️ Risk Intel",
+            "🚨 Pre-Cognitive",
+            "💰 Financials",
+            "📈 Trend Analysis",
+            "📉 Stress Testing",
+            "🔍 Specialized",
+            "🔗 Cross-Ref",
+            "🤖 ML",
+            "📡 Live Data",
+            "🔌 A2A",
+        ]
+    )
+
+    with tabs[0]:
         render_credit_command_center(sr, ml_results, fin, cname)
     with tabs[1]:
-        from dashboards import render_risk_intelligence
         render_risk_intelligence(sr, res, xref, cname, precognitive_signals=precog)
     with tabs[2]:
         st.markdown("### 🚨 Pre-Cognitive Risk Signals")
-        st.info("These are leading indicators of future financial stress, detected through deep research and financial trend analysis.")
+        st.info(
+            "These are leading indicators of future financial stress, detected through deep research and financial trend analysis."
+        )
         if not precog:
             st.success("No critical pre-cognitive risk signals detected.")
         else:
             for p in precog:
-                with st.expander(f"Signal: {p['signal']} ({p['impact']})", expanded=True):
+                with st.expander(
+                    f"Signal: {p['signal']} ({p['impact']})", expanded=True
+                ):
                     st.write(f"**Type:** {p['type']}")
                     st.write(f"**Insight:** {p['insight']}")
     with tabs[3]:
-        from dashboards import render_financial_health
         render_financial_health(fin, sr, cname)
         st.markdown("---")
         st.markdown("#### 📋 Extraction & Source Audit")
         c_a, c_b = st.columns(2)
         with c_a:
-            st.write(f"**CIN:** {fin.get('cin','Not extracted')}")
-            if fin.get("extraction_notes"): st.info(f"**Notes:** {fin['extraction_notes']}")
+            st.write(f"**CIN:** {fin.get('cin', 'Not extracted')}")
+            if fin.get("extraction_notes"):
+                st.info(f"**Notes:** {fin['extraction_notes']}")
         with c_b:
-            dirs = fin.get("directors",[]) or []
-            st.write(f"**Directors:** {', '.join([d.get('name',str(d)) if isinstance(d,dict) else str(d) for d in dirs]) or 'Not extracted'}")
-        
+            dirs = fin.get("directors", []) or []
+            st.write(
+                f"**Directors:** {', '.join([d.get('name', str(d)) if isinstance(d, dict) else str(d) for d in dirs]) or 'Not extracted'}"
+            )
+
         # Detailed Table
-        metric_keys = [("Revenue", "revenue_crores", "₹ Cr"), ("PAT", "profit_after_tax_crores", "₹ Cr"), ("EBITDA", "ebitda_crores", "₹ Cr"), ("Net Worth", "net_worth_crores", "₹ Cr"), ("Total Debt", "total_borrowings_crores", "₹ Cr"), ("Debt/Equity", "debt_equity_ratio", "x"), ("Current Ratio", "current_ratio", "x")]
+        metric_keys = [
+            ("Revenue", "revenue_crores", "₹ Cr"),
+            ("PAT", "profit_after_tax_crores", "₹ Cr"),
+            ("EBITDA", "ebitda_crores", "₹ Cr"),
+            ("Net Worth", "net_worth_crores", "₹ Cr"),
+            ("Total Debt", "total_borrowings_crores", "₹ Cr"),
+            ("Debt/Equity", "debt_equity_ratio", "x"),
+            ("Current Ratio", "current_ratio", "x"),
+        ]
         rows = []
         for l, k, u in metric_keys:
-            v = fin.get(k); src = st.session_state.get("financials_source_map", {}).get(k, "annual_report")
-            rows.append({"Metric": l, "Value": f"{v:,.2f} {u}" if v is not None else "N/A", "Source": src})
+            v = fin.get(k)
+            src = st.session_state.get("financials_source_map", {}).get(
+                k, "annual_report"
+            )
+            rows.append(
+                {
+                    "Metric": l,
+                    "Value": f"{v:,.2f} {u}" if v is not None else "N/A",
+                    "Source": src,
+                }
+            )
         st.table(rows)
 
     with tabs[4]:
-        from dashboards import render_specialized_monitor
-        spec_data = st.session_state.financials_all.get("merged_all", st.session_state.financials_all)
-        render_specialized_monitor(spec_data, cname)
+        st.markdown("### 📈 Multi-Year Trend Analysis")
+        st.caption(
+            "Historical performance analysis with CAGR, YoY growth, and momentum scoring"
+        )
+
+        trend_analysis = sr.get("trend_analysis", {})
+
+        if trend_analysis and trend_analysis.get("years_analyzed"):
+            render_trend_analysis(trend_analysis, cname)
+        else:
+            st.info(
+                "Multi-year trend data not available. Upload multiple years of financial data to enable trend analysis."
+            )
+
+            if st.button("🔄 Generate Demo Trend Analysis", use_container_width=True):
+                demo_trends = {
+                    "years_analyzed": ["FY2021", "FY2022", "FY2023", "FY2024"],
+                    "yearly_summary": [
+                        {
+                            "year": "FY2021",
+                            "revenue": 450,
+                            "ebitda": 72,
+                            "pat": 25,
+                            "debt_equity": 0.8,
+                        },
+                        {
+                            "year": "FY2022",
+                            "revenue": 520,
+                            "ebitda": 88,
+                            "pat": 32,
+                            "debt_equity": 0.75,
+                        },
+                        {
+                            "year": "FY2023",
+                            "revenue": 610,
+                            "ebitda": 104,
+                            "pat": 38,
+                            "debt_equity": 0.7,
+                        },
+                        {
+                            "year": "FY2024",
+                            "revenue": 680,
+                            "ebitda": 116,
+                            "pat": 42,
+                            "debt_equity": 0.65,
+                        },
+                    ],
+                    "overall_momentum_score": 18.5,
+                    "overall_trend": "improving",
+                    "cagr_summary": [
+                        {
+                            "metric": "revenue_crores",
+                            "cagr": 14.8,
+                            "assessment": "Strong growth",
+                        },
+                        {
+                            "metric": "ebitda_crores",
+                            "cagr": 17.2,
+                            "assessment": "Strong growth",
+                        },
+                        {
+                            "metric": "pat_crores",
+                            "cagr": 18.9,
+                            "assessment": "Strong growth",
+                        },
+                    ],
+                    "key_insights": [
+                        "Revenue CAGR of 14.8% indicates strong topline growth",
+                        "EBITDA margin expanding - operational efficiency improving",
+                        "Leverage improving - debt/equity declining",
+                    ],
+                    "risk_signals": [],
+                }
+                render_trend_analysis(demo_trends, cname)
+
+        st.markdown("---")
+        st.markdown("#### 📐 Trend-Adjusted Risk Factors")
+
+        trend_adjusted_score = rec.get("final_score", 0)
+        trend_adjustment = 0
+
+        if trend_analysis:
+            momentum = trend_analysis.get("overall_momentum_score", 0)
+            trend = trend_analysis.get("overall_trend", "stable")
+
+            if momentum > 20:
+                st.success(
+                    "✅ Strong positive momentum detected - positive adjustment applied"
+                )
+                trend_adjustment = 2
+            elif momentum < -20:
+                st.warning("⚠️ Negative momentum detected - risk adjustment applied")
+                trend_adjustment = -5
+            elif trend == "deteriorating":
+                st.warning("⚠️ Deteriorating trend signals - risk adjustment applied")
+                trend_adjustment = -3
+
+        adjusted_score = trend_adjusted_score + trend_adjustment
+        if trend_adjustment != 0:
+            st.metric(
+                "Trend-Adjusted Score",
+                f"{adjusted_score:.0f}/100",
+                delta=f"{trend_adjustment:+.0f} from trend analysis",
+            )
 
     with tabs[5]:
+        st.markdown("### 📉 Stress Testing & Scenario Analysis")
+        st.caption(
+            "Multi-scenario stress testing with rate hike, revenue drop, and liquidity analysis"
+        )
+
+        stress_results = sr.get("stress_test_results", {})
+
+        if stress_results and stress_results.get("overall_stress_score"):
+            render_stress_testing(stress_results, cname)
+        else:
+            st.info("Stress testing data not available.")
+
+            if st.button("🔄 Run Stress Tests", use_container_width=True):
+                from core.stress_testing import run_stress_test
+
+                demo_stress = {
+                    "company_name": cname,
+                    "current_dscr": 2.5,
+                    "current_interest_coverage": 4.2,
+                    "overall_stress_score": 35.0,
+                    "risk_rating": "MEDIUM",
+                    "scenarios": [
+                        {
+                            "name": "Interest Rate Hike (Moderate)",
+                            "severity": "moderate",
+                            "original": 4.2,
+                            "stressed": 3.5,
+                            "change_pct": -16.7,
+                            "risk_level": "LOW",
+                            "description": "Rate hike of 1.0% increases interest cost. ICR drops from 4.2x to 3.5x",
+                            "recommendation": "Maintain adequate liquidity buffer to absorb rate hike impact",
+                        },
+                        {
+                            "name": "Revenue Decline (Moderate)",
+                            "severity": "moderate",
+                            "original": 4.2,
+                            "stressed": 2.8,
+                            "change_pct": -33.3,
+                            "risk_level": "MEDIUM",
+                            "description": "Revenue drop of 20% reduces EBITDA. ICR drops from 4.2x to 2.8x",
+                            "recommendation": "Ensure adequate cash reserves and credit facilities",
+                        },
+                        {
+                            "name": "Liquidity Stress (Moderate)",
+                            "severity": "moderate",
+                            "original": 1.8,
+                            "stressed": 1.1,
+                            "change_pct": -38.9,
+                            "risk_level": "MEDIUM",
+                            "description": "Receivables not realized (40% haircut). Current ratio drops from 1.8x to 1.1x",
+                            "recommendation": "Improve collections and monitor debtor days",
+                        },
+                    ],
+                    "critical_stress_points": [
+                        "Liquidity stress reduces current ratio below 1.2x threshold",
+                    ],
+                    "recommendations": [
+                        "Maintain adequate liquidity buffer to absorb rate hike impact",
+                        "Ensure adequate cash reserves and credit facilities",
+                        "Improve collections and monitor debtor days",
+                    ],
+                }
+                render_stress_testing(demo_stress, cname)
+
+        st.markdown("---")
+        st.markdown("#### 🔍 Stress-Adjusted Risk Factors")
+
+        stress_rating = (
+            stress_results.get("risk_rating", "UNKNOWN")
+            if stress_results
+            else "UNKNOWN"
+        )
+        stress_score = (
+            stress_results.get("overall_stress_score", 0) if stress_results else 0
+        )
+
+        if stress_score > 0:
+            stress_adjustment = 0
+            if stress_rating == "CRITICAL":
+                stress_adjustment = -10
+            elif stress_rating == "HIGH":
+                stress_adjustment = -5
+            elif stress_rating == "MEDIUM":
+                stress_adjustment = -2
+
+            adjusted_score = rec.get("final_score", 0) + stress_adjustment
+            if stress_adjustment != 0:
+                st.metric(
+                    "Stress-Adjusted Score",
+                    f"{adjusted_score:.0f}/100",
+                    delta=f"{stress_adjustment:+.0f} from stress testing",
+                )
+
+    with tabs[6]:
+        spec_data = st.session_state.financials_all.get(
+            "merged_all", st.session_state.financials_all
+        )
+        render_specialized_monitor(spec_data, cname)
+
+    with tabs[7]:
         c_x1, c_x2 = st.columns(2)
         with c_x1:
             st.markdown("#### 🔍 Cross-Document Verification")
-            if xref.get("cross_reference_performed"): st.json(xref)
-            else: st.info(xref.get("reason", "N/A"))
+            if xref.get("cross_reference_performed"):
+                st.json(xref)
+            else:
+                st.info(xref.get("reason", "N/A"))
         with c_x2:
             st.markdown("#### ⚠️ Extraction Red Flags")
-            for r in res.get("overall_sentiment",{}).get("top_risks",[]): st.warning(r)
-            for k,v in fin.get("red_flags",{}).items():
+            for r in res.get("overall_sentiment", {}).get("top_risks", []):
+                st.warning(r)
+            for k, v in fin.get("red_flags", {}).items():
                 if v and k not in ["litigation_count", "severity", "source_page"]:
-                    st.error(f"**{k.replace('_',' ').title()}:** {v}")
+                    st.error(f"**{k.replace('_', ' ').title()}:** {v}")
 
-    with tabs[6]:
+    with tabs[8]:
         if ML_AVAILABLE and ml_results:
             st.markdown("### 🤖 ML Model Intelligence")
             ml_c1, ml_c2 = st.columns(2)
-            ml_c1.metric("Lending Prob", f"{ml_results.get('ml_probability_of_lending', 0)*100:.1f}%")
+            ml_c1.metric(
+                "Lending Prob",
+                f"{ml_results.get('ml_probability_of_lending', 0) * 100:.1f}%",
+            )
             ml_c1.metric("Risk Tier", ml_results.get("ml_risk_tier", "N/A"))
             ml_c2.write("**Model Confidence & Factors**")
             st.json(ml_results)
-            
+
             st.markdown("#### ⚖️ Five Cs Breakdown")
             for c in ["capacity", "character", "capital", "collateral", "conditions"]:
                 with st.expander(f"{c.upper()} Details"):
@@ -533,23 +1072,120 @@ if st.session_state.get("analysis_done"):
         else:
             st.info("ML model results not available for this analysis.")
 
-    with tabs[7]:
+    with tabs[9]:
+        if REALTIME_AVAILABLE:
+            st.markdown("### 📡 Live Data Verification Panel")
+            st.caption(
+                "Real-time data from government APIs - MCA, GST, CIBIL, RBI, NCLT"
+            )
+
+            cin = st.session_state.get("cin", "")
+            gstin = st.text_input(
+                "GSTIN (optional)", value="", placeholder="e.g. 27AABCU9603R1ZM"
+            )
+
+            if st.button("🔄 Fetch Live Data", use_container_width=True):
+                with st.spinner("Fetching live data from government APIs..."):
+                    provider = RealtimeDataProvider()
+                    try:
+                        live_profile = asyncio.run(
+                            provider.get_full_profile(
+                                cin or "U12345MH2010PTC123456", gstin or None
+                            )
+                        )
+                        st.session_state.live_profile = live_profile
+
+                        enricher = LiveDataEnricher(provider)
+                        enriched = asyncio.run(
+                            enricher.enrich_financials(
+                                fin, cin or "U12345MH2010PTC123456"
+                            )
+                        )
+                        st.session_state.enrichment_report = enriched.get(
+                            "enrichment_report", {}
+                        )
+                        st.session_state.enriched_data = enriched.get(
+                            "enriched_data", {}
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to fetch live data: {e}")
+
+            live_profile = st.session_state.get("live_profile")
+            enrichment_report = st.session_state.get("enrichment_report")
+
+            if live_profile:
+                render_live_data_panel(live_profile, enrichment_report)
+
+                summary = render_live_data_summary(live_profile)
+                st.markdown("---")
+                st.markdown("#### 🔍 Live Data Risk Summary")
+
+                r_col1, r_col2, r_col3 = st.columns(3)
+                risk_level = summary.get("risk_level", "UNKNOWN")
+                risk_color = (
+                    "#1E8449"
+                    if risk_level == "LOW"
+                    else "#D68910"
+                    if risk_level == "MEDIUM"
+                    else "#C0392B"
+                )
+
+                with r_col1:
+                    st.metric("Live Risk Level", risk_level)
+                with r_col2:
+                    st.metric(
+                        "Composite Score", f"{summary.get('risk_score', 0):.0f}/100"
+                    )
+                with r_col3:
+                    st.metric("CIBIL Score", summary.get("cibil_score", "N/A"))
+
+                if summary.get("requires_manual_review"):
+                    st.warning(
+                        "⚠️ This profile requires manual review based on live data signals."
+                    )
+
+                if summary.get("wilful_defaulter"):
+                    st.error("🚨 Wilful Defaulter status confirmed via CIBIL!")
+
+                if summary.get("has_insolvency"):
+                    st.error("🚨 Active NCLT insolvency proceedings detected!")
+            else:
+                st.info(
+                    "Click 'Fetch Live Data' to retrieve real-time verification data."
+                )
+        else:
+            st.warning(
+                "Real-time data module not available. Install required dependencies: pip install httpx"
+            )
+            st.code("pip install httpx")
+
+    with tabs[10]:
         st.markdown("### 🔌 Google A2A Protocol")
-        if "a2a_thread" not in st.session_state: st.session_state.a2a_thread = None
+        if "a2a_thread" not in st.session_state:
+            st.session_state.a2a_thread = None
         if st.session_state.a2a_thread is None:
             if st.button("🚀 Start A2A Server", use_container_width=True):
                 from a2a.server import run_a2a_server
                 import threading
-                t = threading.Thread(target=run_a2a_server, kwargs={"port": 5000}, daemon=True); t.start()
-                st.session_state.a2a_thread = t; st.success("Started on port 5000"); st.rerun()
+
+                t = threading.Thread(
+                    target=run_a2a_server, kwargs={"port": 5000}, daemon=True
+                )
+                t.start()
+                st.session_state.a2a_thread = t
+                st.success("Started on port 5000")
+                st.rerun()
         else:
             st.success("🟢 A2A Server Running on Port 5000")
             if st.button("🛑 Stop Server (Restart App)", use_container_width=True):
                 st.warning("Restart the Streamlit app to fully release the port.")
-        
+
         from a2a.agent_cards import AGENT_CARDS
+
         for n, c in AGENT_CARDS.items():
-            with st.expander(f"🤖 Agent: {n}"): st.write(c.description)
+            with st.expander(f"🤖 Agent: {n}"):
+                st.write(c.description)
 
     # ── REVIEWER DESK (New Feature for UX & Analytical Depth) ────────────── #
     st.markdown("---")
@@ -559,39 +1195,53 @@ if st.session_state.get("analysis_done"):
             "Add Qualitative Observations (e.g., Site visit findings, Management evasiveness)",
             value=st.session_state.get("reviewer_notes", ""),
             placeholder="Example: Factory visit revealed 30% idle capacity. Promoter was evasive about subsidiary debt.",
-            help="These notes will be synthesized by the AI to adjust the final risk score and decision."
+            help="These notes will be synthesized by the AI to adjust the final risk score and decision.",
         )
-        
-        if st.button("⚡ Apply Notes & Re-Score Decision", type="primary", use_container_width=True):
+
+        if st.button(
+            "⚡ Apply Notes & Re-Score Decision",
+            type="primary",
+            use_container_width=True,
+        ):
             with st.spinner("Re-calculating risk with qualitative inputs..."):
                 st.session_state.reviewer_notes = reviewer_notes
                 from agents.scoring_agent import ScoringAgent
                 from agents.cam_agent import CAMAgent
-                
+
                 # Re-run scoring with the new notes
                 sa = ScoringAgent(
-                    st.session_state.company_name, fin, res, 
-                    manual_notes=reviewer_notes, 
+                    st.session_state.company_name,
+                    fin,
+                    res,
+                    manual_notes=reviewer_notes,
                     entity_type=fin.get("_entity_type", "corporate"),
-                    cross_ref=st.session_state.cross_ref
+                    cross_ref=st.session_state.cross_ref,
                 )
                 new_sr = sa.run()
-                
+
                 # Re-blend with ML if available
                 if ml_results:
-                    new_rec = sa.generate_recommendation(new_sr["five_cs"], new_sr["risk_score"], ml_results=ml_results)
+                    new_rec = sa.generate_recommendation(
+                        new_sr["five_cs"], new_sr["risk_score"], ml_results=ml_results
+                    )
                     new_sr["recommendation"] = new_rec
-                
+
                 st.session_state.scoring_results = new_sr
-                
+
                 # Re-generate CAM with the new notes included
                 st.session_state.cam_path = CAMAgent(
-                    st.session_state.company_name, fin, res, new_sr, xref, 
-                    manual_notes=reviewer_notes, 
-                    output_dir="outputs"
+                    st.session_state.company_name,
+                    fin,
+                    res,
+                    new_sr,
+                    xref,
+                    manual_notes=reviewer_notes,
+                    output_dir="outputs",
                 ).run()
-                
-                st.success("Analysis Updated! Final score and CAM have been adjusted based on your notes.")
+
+                st.success(
+                    "Analysis Updated! Final score and CAM have been adjusted based on your notes."
+                )
                 time.sleep(1)
                 st.rerun()
 
