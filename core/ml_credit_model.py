@@ -1,9 +1,14 @@
 """
 core/ml_credit_model.py
 -----------------------
+
+1. 500 synthetic company profiles - Generated programmatically spanning AAA to D rating bands
+2. RBI IRAC NPA classification thresholds - Publicly available RBI guidelines for NPA classification
+3. CRISIL/ICRA rating migration matrices - Public CRISIL/ICRA rating migration matrices (2023 annual report)
+
+
 ML-based credit recommendation engine.
 
-The hackathon problem statement explicitly requires "ML based" final recommendation.
 This module implements a calibrated logistic regression model trained on synthetic
 data built from RBI IRAC norms and public CRISIL/ICRA rating migration matrices.
 

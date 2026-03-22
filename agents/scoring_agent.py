@@ -1,11 +1,22 @@
 """
 agents/scoring_agent.py
 -----------------------
-Fixes applied in this version:
-  #1  Penalty engine — surgical rules, no false positives on demergers
-  #2  ML + Five Cs blending layer — single final score and decision
-  #6  Loan sizing — calibrated to net worth, revenue, NBFC concentration limits
-  #7  Research rating — structured signal-counting rubric
+The Five Cs are:
+1. Character (25% weight) - Promoter/management integrity, governance, no wilful default
+2. Capacity (30% weight) - Revenue trend, EBITDA margin, ICR, DSCR, cash flow
+3. Capital (20% weight) - Net worth, debt-equity, leverage
+4. Collateral (15% weight) - Fixed assets, security coverage, charges
+5. Conditions (10% weight) - Sector health, macro, RBI regulations
+The calculation is done by:
+1. score_five_cs() - Uses an AI model (Gemini) to score each C based on financial data and research intelligence
+2. calculate_risk_score() - Combines the five C scores with weights:
+   - weighted_score = sum(scores[c] * weights[c] for c in weights)
+3. Penalties are then subtracted based on various risk signals
+4. Final score = weighted_score - penalties
+The scoring context differs based on entity type:
+- For banks/NBFCs/insurance: Uses NIM, Gross NPA, CAR, ROA, ROE, Cost-to-Income
+- For corporates: Uses ICR, Debt/Equity, Current Ratio, DSCR, EBITDA Margin, ROE
+
 """
 
 import os

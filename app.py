@@ -378,7 +378,7 @@ elif st.session_state.step == 2:
     )
     uploaded_files = st.file_uploader(
         "Secure Upload Interface",
-        type=["pdf", "json", "csv"],
+        type=["pdf", "json", "csv", "xlsx", "xls"],
         accept_multiple_files=True,
     )
     if uploaded_files:
