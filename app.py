@@ -4,6 +4,7 @@ import time
 import re
 import asyncio
 import tempfile
+import shutil
 import streamlit as st
 from datetime import datetime
 from dotenv import load_dotenv
@@ -394,6 +395,17 @@ elif st.session_state.step == 2:
             with st.spinner("Classifying documents..."):
                 from agents.document_classifier import DocumentClassifier
                 import pdfplumber
+
+                if hasattr(st.session_state, "classifications"):
+                    for fname, info in st.session_state.classifications.items():
+                        old_path = info.get("path", "")
+                        if old_path and os.path.exists(old_path):
+                            try:
+                                parent_dir = os.path.dirname(old_path)
+                                if os.path.isdir(parent_dir):
+                                    shutil.rmtree(parent_dir, ignore_errors=True)
+                            except:
+                                pass
 
                 tmp_dir = tempfile.mkdtemp()
                 classifications = {}
