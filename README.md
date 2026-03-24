@@ -8,7 +8,7 @@ Transforming raw, unstructured financial data into high-precision, AI-backed inv
 
 ## Award
 
-🏆 **2nd Prize** - National Level AI/ML Hackathon by Vivriti Capital Limited at **IIT Hyderabad · YUVAAN 2026**
+🏆 **2nd Prize** - National Level AI/ML Hackathon by Vivriti Capital Limited at **IIT Hyderabad · YUVAAN 2026**.
 
 ---
 
